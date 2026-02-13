@@ -1,0 +1,98 @@
+{
+  "4": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["12", 0],
+      "text": "cyberpunk drone, samurai warrior, high quality"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["12", 0],
+      "text": "blur, distortion, artifacts, low quality"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["3", 0],
+      "vae": ["4", 0]
+    }
+  },
+  "9": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["8", 0],
+      "frame_rate": 24,
+      "filename_prefix": "skate_reskin",
+      "format": "video/h264-mp4"
+    }
+  },
+  "10": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "input.mp4",
+      "frame_load_cap": 50,
+      "force_rate": 24
+    }
+  },
+  "11": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "reference.png"
+    }
+  },
+  "12": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan"
+    }
+  },
+  "13": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "model_name": "Wan2.1-VACE-14B-Q4_K_S.gguf"
+    }
+  },
+  "14": {
+    "class_type": "WanVaceToVideo",
+    "inputs": {
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "vae": ["4", 0],
+      "control_video": ["15", 0],
+      "reference_image": ["11", 0],
+      "width": 720,
+      "height": 480,
+      "frame_number": 50
+    }
+  },
+  "15": {
+    "class_type": "LoadImagesFromDirectory",
+    "inputs": {
+      "directory": "pose_skater"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["13", 0],
+      "positive": ["14", 0],
+      "negative": ["14", 1],
+      "latent_image": ["14", 2],
+      "seed": 42,
+      "steps": 20,
+      "cfg": 4,
+      "sampler_name": "uni_pc",
+      "scheduler": "normal"
+    }
+  }
+}
