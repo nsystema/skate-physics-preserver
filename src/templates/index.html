@@ -9,25 +9,31 @@
    THEME & RESET
    ================================================================ */
 :root {
-  --bg:         #07070d;
-  --surface:    #111122;
-  --surface-2:  #191930;
-  --surface-3:  #222240;
-  --border:     #2a2a48;
-  --text:       #e4e4f0;
-  --text-dim:   #7878a0;
-  --primary:    #6366f1;
-  --primary-h:  #818cf8;
-  --success:    #22c55e;
-  --warning:    #eab308;
-  --danger:     #ef4444;
-  --skater:     #3b82f6;
-  --skateboard: #f97316;
-  --radius:     12px;
-  --shadow:     0 4px 24px rgba(0,0,0,.45);
+  --bg:          #07070d;
+  --surface:     #111122;
+  --surface-2:   #181830;
+  --surface-3:   #222240;
+  --border:      #2a2a48;
+  --border-l:    #363660;
+  --text:        #e4e4f0;
+  --text-dim:    #7878a0;
+  --text-muted:  #50506e;
+  --primary:     #6366f1;
+  --primary-h:   #818cf8;
+  --primary-bg:  rgba(99,102,241,.08);
+  --success:     #22c55e;
+  --success-bg:  rgba(34,197,94,.08);
+  --warning:     #eab308;
+  --danger:      #ef4444;
+  --skater:      #3b82f6;
+  --skateboard:  #f97316;
+  --radius:      12px;
+  --radius-sm:   8px;
+  --shadow:      0 4px 24px rgba(0,0,0,.45);
+  --shadow-lg:   0 8px 40px rgba(0,0,0,.55);
 }
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-html { font-size:15px; }
+html { font-size: 15px; }
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
@@ -37,33 +43,102 @@ body {
   flex-direction: column;
   align-items: center;
 }
-a { color: var(--primary-h); text-decoration:none; }
+a { color: var(--primary-h); text-decoration: none; }
 
 /* ================================================================
    HEADER
    ================================================================ */
 .header {
   width: 100%;
-  padding: 28px 0 18px;
+  padding: 24px 0 0;
   text-align: center;
   background: linear-gradient(180deg, #0e0e1c 0%, var(--bg) 100%);
-  border-bottom: 1px solid var(--border);
 }
 .header h1 {
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -.02em;
 }
 .header p {
   color: var(--text-dim);
-  font-size: .85rem;
-  margin-top: 4px;
+  font-size: .82rem;
+  margin-top: 2px;
 }
 
 /* ================================================================
-   CONTAINER / STEP CARDS
+   STEPPER  (horizontal step indicator)
    ================================================================ */
-.container { width:100%; max-width:880px; padding:24px 16px 60px; }
+.stepper-wrap {
+  width: 100%;
+  max-width: 560px;
+  margin: 20px auto 0;
+  padding: 0 16px;
+}
+.stepper {
+  display: flex;
+  align-items: flex-start;
+  position: relative;
+}
+.stepper-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  z-index: 1;
+}
+.stepper-circle {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: .82rem;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  transition: all .35s ease;
+}
+.stepper-step.active .stepper-circle {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(99,102,241,.18);
+}
+.stepper-step.complete .stepper-circle {
+  border-color: var(--success);
+  background: var(--success);
+  color: #fff;
+}
+.stepper-label {
+  font-size: .72rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  transition: color .3s;
+}
+.stepper-step.active .stepper-label  { color: var(--text); }
+.stepper-step.complete .stepper-label { color: var(--success); }
+
+/* Connecting lines */
+.stepper-line {
+  position: absolute;
+  top: 16px;
+  height: 2px;
+  background: var(--border);
+  transition: background .4s ease;
+  z-index: 0;
+}
+.stepper-line.done { background: var(--success); }
+
+/* ================================================================
+   CONTAINER & STEP CARDS
+   ================================================================ */
+.container { width: 100%; max-width: 1020px; padding: 20px 16px 60px; }
 
 .step {
   display: none;
@@ -77,20 +152,20 @@ a { color: var(--primary-h); text-decoration:none; }
 }
 .step.active { display: block; }
 @keyframes fadeUp {
-  from { opacity:0; transform:translateY(12px); }
+  from { opacity:0; transform:translateY(10px); }
   to   { opacity:1; transform:translateY(0); }
 }
 
 .step-title {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .step-desc {
   color: var(--text-dim);
-  font-size: .85rem;
+  font-size: .84rem;
   margin-bottom: 20px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 /* ================================================================
@@ -99,7 +174,7 @@ a { color: var(--primary-h); text-decoration:none; }
 .upload-zone {
   border: 2px dashed var(--border);
   border-radius: var(--radius);
-  padding: 40px 20px;
+  padding: 38px 20px;
   text-align: center;
   cursor: pointer;
   transition: border-color .2s, background .2s;
@@ -107,15 +182,15 @@ a { color: var(--primary-h); text-decoration:none; }
 }
 .upload-zone:hover, .upload-zone.drag-over {
   border-color: var(--primary);
-  background: rgba(99,102,241,.06);
+  background: var(--primary-bg);
 }
-.upload-zone .icon { font-size: 2.4rem; margin-bottom: 8px; }
-.upload-zone p { color: var(--text-dim); font-size: .88rem; }
+.upload-zone .icon { font-size: 2.2rem; margin-bottom: 6px; }
+.upload-zone p { color: var(--text-dim); font-size: .86rem; }
 
 .or-divider {
   text-align: center;
   color: var(--text-dim);
-  font-size: .8rem;
+  font-size: .78rem;
   margin: 14px 0;
   position: relative;
 }
@@ -126,23 +201,36 @@ a { color: var(--primary-h); text-decoration:none; }
 .or-divider::before { left:0; }
 .or-divider::after  { right:0; }
 
-.url-row {
-  display: flex;
-  gap: 10px;
-}
+.url-row { display:flex; gap:10px; }
 .url-row input {
   flex: 1;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 10px 14px;
   color: var(--text);
-  font-size: .9rem;
+  font-size: .88rem;
   outline: none;
   transition: border-color .2s;
 }
 .url-row input:focus { border-color: var(--primary); }
 .url-row input::placeholder { color: var(--text-dim); }
+
+/* Video info badge after upload */
+.video-info {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  margin-top: 12px;
+  font-size: .84rem;
+}
+.video-info.show { display: flex; }
+.video-info .vi-name { font-weight: 600; color: var(--text); }
+.video-info .vi-meta { color: var(--text-dim); }
 
 /* ================================================================
    BUTTONS
@@ -154,15 +242,15 @@ a { color: var(--primary-h); text-decoration:none; }
   gap: 6px;
   padding: 10px 22px;
   border: none;
-  border-radius: 8px;
-  font-size: .9rem;
+  border-radius: var(--radius-sm);
+  font-size: .88rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background .2s, transform .1s;
+  transition: background .2s, transform .1s, opacity .2s;
   color: #fff;
 }
 .btn:active { transform: scale(.97); }
-.btn:disabled { opacity:.45; cursor:not-allowed; }
+.btn:disabled { opacity:.4; cursor:not-allowed; }
 .btn-primary   { background: var(--primary); }
 .btn-primary:hover:not(:disabled) { background: var(--primary-h); }
 .btn-success   { background: var(--success); }
@@ -176,12 +264,13 @@ a { color: var(--primary-h); text-decoration:none; }
   border: 1px solid var(--border);
   color: var(--text);
 }
-.btn-outline:hover:not(:disabled) { border-color: var(--primary); color:var(--primary-h); }
+.btn-outline:hover:not(:disabled) { border-color: var(--primary); color: var(--primary-h); }
+.btn-sm { padding: 6px 14px; font-size: .8rem; }
 
 .btn-row { display:flex; gap:10px; margin-top:20px; flex-wrap:wrap; }
 
 /* ================================================================
-   PREVIEW IMAGE
+   PREVIEW / DETECTION
    ================================================================ */
 .preview-wrap {
   position: relative;
@@ -205,65 +294,43 @@ a { color: var(--primary-h); text-decoration:none; }
   margin-bottom: 10px;
   font-size: .82rem;
 }
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+.legend-item { display:flex; align-items:center; gap:6px; }
 .legend-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
+  width: 12px; height: 12px; border-radius: 50%;
 }
 .legend-dot.skater     { background: var(--skater); }
 .legend-dot.skateboard { background: var(--skateboard); }
 
-/* Detection card list */
-.det-cards {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
+.det-cards { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
 .det-card {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 10px 16px;
-  font-size: .85rem;
+  font-size: .84rem;
   min-width: 140px;
 }
 .det-card .label {
-  font-weight: 600;
-  text-transform: capitalize;
-  margin-bottom: 2px;
+  font-weight: 600; text-transform: capitalize; margin-bottom:2px;
 }
-.det-card .conf { color: var(--text-dim); font-size:.8rem; }
+.det-card .conf { color: var(--text-dim); font-size:.79rem; }
 
-/* ================================================================
-   MANUAL MODE BANNER
-   ================================================================ */
+/* Manual mode banner */
 .manual-banner {
   background: var(--surface-3);
   border: 1px solid var(--primary);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 12px 18px;
   margin-bottom: 16px;
-  font-size: .88rem;
+  font-size: .86rem;
   display: none;
 }
 .manual-banner.active { display:block; }
-.manual-banner .step-num {
-  color: var(--primary-h);
-  font-weight: 700;
-}
+.manual-banner .step-num { color:var(--primary-h); font-weight:700; }
 
-/* Click markers on image */
 .click-marker {
   position: absolute;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
+  width: 20px; height: 20px; border-radius: 50%;
   border: 2px solid #fff;
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -272,66 +339,271 @@ a { color: var(--primary-h); text-decoration:none; }
 }
 
 /* ================================================================
-   PROGRESS BAR
+   PIPELINE PROGRESS  (enhanced with sub-steps)
    ================================================================ */
 .progress-outer {
   width: 100%;
-  height: 10px;
+  height: 8px;
   background: var(--surface-3);
   border-radius: 6px;
   overflow: hidden;
-  margin: 16px 0 12px;
+  margin: 18px 0 16px;
 }
 .progress-inner {
   height: 100%;
-  background: linear-gradient(90deg, var(--primary), var(--success));
+  background: linear-gradient(90deg, var(--primary), #a78bfa, var(--success));
   border-radius: 6px;
   width: 0%;
-  transition: width .4s ease;
+  transition: width .5s ease;
+}
+.progress-pct {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-align: right;
+  margin-bottom: 4px;
+}
+
+.sub-steps {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+.sub-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  font-size: .86rem;
+  border-bottom: 1px solid rgba(42,42,72,.5);
+}
+.sub-step:last-child { border-bottom: none; }
+.sub-step-icon {
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-size: .7rem;
+}
+.sub-step-icon.pending  { background: var(--surface-3); color: var(--text-muted); }
+.sub-step-icon.running  { background: var(--primary-bg); border: 2px solid var(--primary); color: var(--primary); }
+.sub-step-icon.complete { background: var(--success); color: #fff; }
+.sub-step-icon.error    { background: var(--danger); color: #fff; }
+.sub-step-label { flex:1; color: var(--text); }
+.sub-step.pending .sub-step-label { color: var(--text-muted); }
+.sub-step-detail {
+  font-size: .78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .status-msg {
   color: var(--text-dim);
-  font-size: .88rem;
+  font-size: .86rem;
   min-height: 1.3em;
+  margin-top: 8px;
 }
 
 /* ================================================================
-   COMPLETION
+   RESULTS — COMPARISON VIEWER  (side-by-side)
    ================================================================ */
-.complete-check {
-  font-size: 3rem;
+.results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.results-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--success-bg);
+  border: 1px solid rgba(34,197,94,.2);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-size: .82rem;
+  font-weight: 600;
   color: var(--success);
-  text-align: center;
-  margin-bottom: 10px;
 }
-.output-list {
-  list-style: none;
-  margin-top: 12px;
+
+.comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 4px;
 }
-.output-list li {
-  padding: 6px 0;
-  font-size: .88rem;
-  color: var(--text-dim);
+@media (max-width: 700px) {
+  .comparison { grid-template-columns: 1fr; }
+}
+
+.comp-panel {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.comp-panel-head {
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
 }
-.output-list li:last-child { border:none; }
-.output-list .label { color:var(--text); font-weight:600; }
+.comp-panel-title {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.comp-tabs {
+  display: flex;
+  gap: 3px;
+}
+.comp-tab {
+  padding: 4px 11px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: .78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s;
+}
+.comp-tab.active { background: var(--primary); color: #fff; }
+.comp-tab:hover:not(.active) { background: var(--surface-3); color: var(--text); }
+
+.comp-panel-body {
+  position: relative;
+  line-height: 0;
+  background: #000;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.comp-panel-body img,
+.comp-panel-body canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.comp-panel-body .placeholder {
+  color: var(--text-muted);
+  font-size: .82rem;
+  line-height: 1.4;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+/* Playback controls strip */
+.playback {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0 8px;
+}
+.btn-play {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  font-size: .85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background .2s;
+}
+.btn-play:hover { background: var(--primary-h); }
+
+.frame-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  background: var(--surface-3);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+.frame-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 0 4px rgba(0,0,0,.3);
+}
+.frame-slider::-moz-range-thumb {
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 0 4px rgba(0,0,0,.3);
+}
+.frame-info {
+  font-size: .78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  min-width: 160px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Results summary grid */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+.summary-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+}
+.summary-card .sc-label {
+  font-size: .74rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 4px;
+}
+.summary-card .sc-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.summary-card .sc-detail {
+  font-size: .78rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
 
 /* ================================================================
    SPINNER
    ================================================================ */
 .spinner {
   display: inline-block;
-  width: 18px;
-  height: 18px;
-  border: 2.5px solid rgba(255,255,255,.25);
+  width: 16px; height: 16px;
+  border: 2.5px solid rgba(255,255,255,.2);
   border-top-color: #fff;
   border-radius: 50%;
   animation: spin .6s linear infinite;
   vertical-align: middle;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+.spinner-sm { width:12px; height:12px; border-width:2px; }
+@keyframes spin { to { transform:rotate(360deg); } }
 
 /* ================================================================
    ERROR TOAST
@@ -344,9 +616,9 @@ a { color: var(--primary-h); text-decoration:none; }
   background: var(--danger);
   color: #fff;
   padding: 12px 24px;
-  border-radius: 8px;
-  font-size: .88rem;
-  box-shadow: 0 6px 28px rgba(0,0,0,.5);
+  border-radius: var(--radius-sm);
+  font-size: .86rem;
+  box-shadow: var(--shadow-lg);
   opacity: 0;
   transition: opacity .3s, transform .3s;
   z-index: 999;
@@ -362,9 +634,33 @@ a { color: var(--primary-h); text-decoration:none; }
 
 <body>
 
+<!-- ============================================================
+     HEADER + STEPPER
+     ============================================================ -->
 <div class="header">
   <h1>Skate Physics Preserver</h1>
-  <p>Auto-detect &middot; Validate &middot; Extract</p>
+  <p>Auto-detect &middot; Validate &middot; Extract &middot; Compare</p>
+
+  <div class="stepper-wrap">
+    <div class="stepper" id="stepper">
+      <div class="stepper-step active" data-idx="0">
+        <div class="stepper-circle" id="sc-0">1</div>
+        <div class="stepper-label">Upload</div>
+      </div>
+      <div class="stepper-step" data-idx="1">
+        <div class="stepper-circle" id="sc-1">2</div>
+        <div class="stepper-label">Detect</div>
+      </div>
+      <div class="stepper-step" data-idx="2">
+        <div class="stepper-circle" id="sc-2">3</div>
+        <div class="stepper-label">Extract</div>
+      </div>
+      <div class="stepper-step" data-idx="3">
+        <div class="stepper-circle" id="sc-3">4</div>
+        <div class="stepper-label">Results</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="container">
@@ -373,7 +669,7 @@ a { color: var(--primary-h); text-decoration:none; }
        STEP 1 : Upload / load video
        ======================================================== -->
   <div id="step-upload" class="step active">
-    <div class="step-title">1 &mdash; Load Video</div>
+    <div class="step-title">Load Video</div>
     <div class="step-desc">
       Upload an .mp4 file or paste a YouTube URL.  The first frame will be
       used for automatic skater + skateboard detection.
@@ -393,13 +689,18 @@ a { color: var(--primary-h); text-decoration:none; }
     </div>
 
     <div id="upload-status" class="status-msg" style="margin-top:12px;"></div>
+
+    <div class="video-info" id="video-info">
+      <span class="vi-name" id="vi-name"></span>
+      <span class="vi-meta" id="vi-meta"></span>
+    </div>
   </div>
 
   <!-- ========================================================
        STEP 2 : Detection & validation
        ======================================================== -->
   <div id="step-detect" class="step">
-    <div class="step-title">2 &mdash; Validate Detections</div>
+    <div class="step-title">Validate Detections</div>
     <div class="step-desc" id="detect-desc">
       SAM 2.1 masks overlaid on frame 0.  Confirm both the <strong
       style="color:var(--skater)">skater</strong> and
@@ -433,32 +734,74 @@ a { color: var(--primary-h); text-decoration:none; }
   </div>
 
   <!-- ========================================================
-       STEP 3 : Pipeline running
+       STEP 3 : Pipeline running  (enhanced with sub-steps)
        ======================================================== -->
   <div id="step-pipeline" class="step">
-    <div class="step-title">3 &mdash; Running Pipeline</div>
+    <div class="step-title">Extracting Physics</div>
     <div class="step-desc">
-      Extracting DWPose skeletons and SAM 2.1 masks.  This may take a few
-      minutes depending on video length.
+      Running DWPose skeleton extraction and SAM 2.1 mask propagation.
+      This may take a few minutes depending on video length.
     </div>
 
+    <div class="progress-pct" id="prog-pct">0%</div>
     <div class="progress-outer">
       <div class="progress-inner" id="prog-bar"></div>
     </div>
-    <div class="status-msg" id="pipeline-msg">Initialising …</div>
+
+    <ul class="sub-steps" id="sub-steps"></ul>
+
+    <div class="status-msg" id="pipeline-msg">Initialising ...</div>
   </div>
 
   <!-- ========================================================
-       STEP 4 : Complete
+       STEP 4 : Results — Side-by-side comparison viewer
        ======================================================== -->
-  <div id="step-complete" class="step">
-    <div class="complete-check">&#10003;</div>
-    <div class="step-title" style="text-align:center;">Extraction Complete</div>
-    <div class="step-desc" style="text-align:center;" id="complete-summary"></div>
+  <div id="step-results" class="step">
+    <div class="results-header">
+      <div>
+        <div class="step-title">Results</div>
+        <div class="step-desc" style="margin-bottom:0;" id="results-summary-text">
+          Pipeline complete. Use the comparison viewer to inspect outputs frame-by-frame.
+        </div>
+      </div>
+      <div class="results-badge" id="results-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        Complete
+      </div>
+    </div>
 
-    <ul class="output-list" id="output-list"></ul>
+    <!-- Comparison panels -->
+    <div class="comparison">
+      <div class="comp-panel">
+        <div class="comp-panel-head">
+          <span class="comp-panel-title">Original</span>
+        </div>
+        <div class="comp-panel-body" id="comp-left-body">
+          <div class="placeholder">Loading frames ...</div>
+        </div>
+      </div>
+      <div class="comp-panel">
+        <div class="comp-panel-head">
+          <span class="comp-panel-title" id="comp-right-title">Output</span>
+          <div class="comp-tabs" id="comp-tabs"></div>
+        </div>
+        <div class="comp-panel-body" id="comp-right-body">
+          <div class="placeholder">Select a view above</div>
+        </div>
+      </div>
+    </div>
 
-    <div class="btn-row" style="justify-content:center;">
+    <!-- Playback controls -->
+    <div class="playback">
+      <button class="btn-play" id="btn-play" title="Play / Pause">&#9654;</button>
+      <input type="range" class="frame-slider" id="frame-slider" min="0" max="0" value="0">
+      <span class="frame-info" id="frame-info">Frame 0 / 0</span>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="summary-grid" id="summary-grid"></div>
+
+    <div class="btn-row" style="justify-content:center; margin-top:24px;">
       <button class="btn btn-primary" id="btn-new">Process Another Video</button>
     </div>
   </div>
@@ -473,21 +816,71 @@ a { color: var(--primary-h); text-decoration:none; }
    GLOBALS
    ============================================================= */
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
 
-const steps = {
+/* ---- Stepper management ---- */
+const STEP_NAMES = ['upload', 'detect', 'pipeline', 'results'];
+let currentStepIdx = 0;
+
+const stepEls = {
   upload:   $('#step-upload'),
   detect:   $('#step-detect'),
   pipeline: $('#step-pipeline'),
-  complete: $('#step-complete'),
+  results:  $('#step-results'),
 };
 
 function showStep(name) {
-  Object.values(steps).forEach(s => s.classList.remove('active'));
-  steps[name].classList.add('active');
-  window.scrollTo({top: 0, behavior:'smooth'});
+  const idx = STEP_NAMES.indexOf(name);
+  if (idx === -1) return;
+  currentStepIdx = idx;
+
+  Object.values(stepEls).forEach(s => s.classList.remove('active'));
+  stepEls[name].classList.add('active');
+  updateStepper();
+  window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
-/* toast */
+function updateStepper() {
+  const steps = $$('#stepper .stepper-step');
+  steps.forEach((el, i) => {
+    el.classList.remove('active', 'complete');
+    const circle = el.querySelector('.stepper-circle');
+    if (i < currentStepIdx) {
+      el.classList.add('complete');
+      circle.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+    } else if (i === currentStepIdx) {
+      el.classList.add('active');
+      circle.textContent = i + 1;
+    } else {
+      circle.textContent = i + 1;
+    }
+  });
+  // Position connecting lines
+  positionStepperLines();
+}
+
+function positionStepperLines() {
+  // Remove old lines
+  $$('.stepper-line').forEach(l => l.remove());
+  const steps = $$('#stepper .stepper-step');
+  const stepper = $('#stepper');
+  for (let i = 0; i < steps.length - 1; i++) {
+    const c1 = steps[i].querySelector('.stepper-circle');
+    const c2 = steps[i + 1].querySelector('.stepper-circle');
+    const r1 = c1.getBoundingClientRect();
+    const r2 = c2.getBoundingClientRect();
+    const sr = stepper.getBoundingClientRect();
+    const line = document.createElement('div');
+    line.className = 'stepper-line' + (i < currentStepIdx ? ' done' : '');
+    line.style.left = (r1.right - sr.left) + 'px';
+    line.style.width = (r2.left - r1.right) + 'px';
+    stepper.appendChild(line);
+  }
+}
+window.addEventListener('resize', positionStepperLines);
+requestAnimationFrame(positionStepperLines);
+
+/* ---- Toast ---- */
 let _toastTimer;
 function toast(msg, ms = 5000) {
   const t = $('#toast');
@@ -523,36 +916,48 @@ $('#btn-load-url').addEventListener('click', () => {
 });
 
 async function loadFile(file) {
-  uploadSt.innerHTML = '<span class="spinner"></span> Uploading & reading first frame …';
+  uploadSt.innerHTML = '<span class="spinner"></span> Uploading & reading first frame ...';
   const fd = new FormData();
   fd.append('video', file);
   try {
     const r = await fetch('/api/load', {method:'POST', body: fd});
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'Upload failed');
-    onVideoLoaded(j);
+    onVideoLoaded(j, file.name);
   } catch(e) { toast(e.message); uploadSt.textContent = ''; }
 }
 
 async function loadUrl(url) {
-  uploadSt.innerHTML = '<span class="spinner"></span> Downloading video …';
+  uploadSt.innerHTML = '<span class="spinner"></span> Downloading video ...';
   const fd = new FormData();
   fd.append('url', url);
   try {
     const r = await fetch('/api/load', {method:'POST', body: fd});
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'Load failed');
-    onVideoLoaded(j);
+    onVideoLoaded(j, j.video_path || 'YouTube video');
   } catch(e) { toast(e.message); uploadSt.textContent = ''; }
 }
 
-function onVideoLoaded(data) {
+function onVideoLoaded(data, displayName) {
   uploadSt.textContent = '';
-  // Store frame for later
-  window._frameB64  = data.frame;
-  window._frameW    = data.width;
-  window._frameH    = data.height;
-  // Jump to auto-detect
+  window._frameB64   = data.frame;
+  window._frameW     = data.width;
+  window._frameH     = data.height;
+  window._fps        = data.fps || 30;
+  window._frameCount = data.frame_count || 0;
+  window._duration   = data.duration || 0;
+
+  // Show video info badge
+  const vi = $('#video-info');
+  vi.classList.add('show');
+  $('#vi-name').textContent = displayName || 'video';
+  const dur = window._duration;
+  const durStr = dur > 0 ? `${dur.toFixed(1)}s` : '';
+  const fpsStr = window._fps > 0 ? `${window._fps.toFixed(1)} fps` : '';
+  const dimStr = `${data.width}x${data.height}`;
+  $('#vi-meta').textContent = [dimStr, fpsStr, durStr].filter(Boolean).join(' · ');
+
   runAutoDetect();
 }
 
@@ -564,7 +969,7 @@ async function runAutoDetect() {
   showStep('detect');
   $('#preview-img').src = 'data:image/jpeg;base64,' + window._frameB64;
   $('#det-cards').innerHTML = '';
-  $('#detect-desc').textContent = 'Running YOLO + SAM auto-detection …';
+  $('#detect-desc').textContent = 'Running YOLO + SAM auto-detection ...';
   disableDetectBtns(true);
 
   try {
@@ -580,11 +985,9 @@ async function runAutoDetect() {
 }
 
 function onDetected(data) {
-  // Update preview
   if (data.overlay) {
     $('#preview-img').src = 'data:image/jpeg;base64,' + data.overlay;
   }
-  // Detection cards
   const cards = $('#det-cards');
   cards.innerHTML = '';
   (data.detections || []).forEach(d => {
@@ -595,7 +998,6 @@ function onDetected(data) {
                    <div class="conf">bbox: [${d.bbox.join(', ')}]</div>`;
     cards.appendChild(c);
   });
-  // Description
   const desc = $('#detect-desc');
   if (data.detections && data.detections.length >= 2) {
     desc.innerHTML = 'Both <strong style="color:var(--skater)">skater</strong> and ' +
@@ -634,10 +1036,7 @@ $('#btn-approve').addEventListener('click', async () => {
   }
 });
 
-/* Re-detect */
 $('#btn-redetect').addEventListener('click', runAutoDetect);
-
-/* Back */
 $('#btn-back-upload').addEventListener('click', () => {
   exitManualMode();
   showStep('upload');
@@ -646,25 +1045,20 @@ $('#btn-back-upload').addEventListener('click', () => {
 /* ----- Manual mode ----- */
 let manualMode   = false;
 let manualPoints = [];
-let manualStep   = 0;  // 0 = waiting for skater click, 1 = waiting for skateboard click
-
+let manualStep   = 0;
 const MANUAL_ORDER = ['skater', 'skateboard'];
 
-$('#btn-manual').addEventListener('click', () => {
-  enterManualMode();
-});
+$('#btn-manual').addEventListener('click', () => enterManualMode());
 
 function enterManualMode() {
   manualMode = true;
   manualStep = 0;
   manualPoints = [];
   clearMarkers();
-  // Show raw frame
   $('#preview-img').src = 'data:image/jpeg;base64,' + window._frameB64;
   $('#preview-wrap').classList.add('clickable');
   $('#manual-banner').classList.add('active');
   updateManualInstruction();
-  // Hide approve until both points placed
   $('#btn-approve').disabled = true;
   $('#btn-manual').textContent = 'Cancel Manual';
   $('#btn-manual').onclick = exitManualMode;
@@ -708,7 +1102,6 @@ $('#preview-wrap').addEventListener('click', (e) => {
   if (manualStep < 2) {
     updateManualInstruction();
   } else {
-    // Both points placed — send to backend
     $('#manual-banner').classList.remove('active');
     submitManualPoints();
   }
@@ -720,18 +1113,17 @@ function addMarker(px, py, label) {
   m.className = 'click-marker';
   m.style.left = px + 'px';
   m.style.top  = py + 'px';
-  m.style.background = label === 'skater'
-    ? 'var(--skater)' : 'var(--skateboard)';
+  m.style.background = label === 'skater' ? 'var(--skater)' : 'var(--skateboard)';
   wrap.appendChild(m);
 }
 
 function clearMarkers() {
-  document.querySelectorAll('.click-marker').forEach(m => m.remove());
+  $$('.click-marker').forEach(m => m.remove());
 }
 
 async function submitManualPoints() {
   disableDetectBtns(true);
-  $('#detect-desc').textContent = 'Running SAM segmentation on your points …';
+  $('#detect-desc').textContent = 'Running SAM segmentation on your points ...';
   try {
     const r = await fetch('/api/refine', {
       method: 'POST',
@@ -749,17 +1141,46 @@ async function submitManualPoints() {
 }
 
 /* =============================================================
-   STEP 3 — Pipeline progress
+   STEP 3 — Pipeline progress (with sub-steps)
    ============================================================= */
 let _pollTimer;
+
+function renderSubSteps(subSteps) {
+  const ul = $('#sub-steps');
+  ul.innerHTML = '';
+  if (!subSteps || !subSteps.length) return;
+
+  subSteps.forEach(ss => {
+    const li = document.createElement('li');
+    li.className = 'sub-step ' + ss.status;
+
+    let iconContent = '';
+    if (ss.status === 'complete') iconContent = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+    else if (ss.status === 'running') iconContent = '<span class="spinner spinner-sm"></span>';
+    else if (ss.status === 'error') iconContent = '!';
+    else iconContent = '';
+
+    li.innerHTML = `
+      <div class="sub-step-icon ${ss.status}">${iconContent}</div>
+      <span class="sub-step-label">${ss.label}</span>
+      <span class="sub-step-detail">${ss.detail || ''}</span>
+    `;
+    ul.appendChild(li);
+  });
+}
+
 function pollPipeline() {
   clearInterval(_pollTimer);
   _pollTimer = setInterval(async () => {
     try {
       const r = await fetch('/api/status');
       const j = await r.json();
+
       $('#prog-bar').style.width = j.progress + '%';
+      $('#prog-pct').textContent = j.progress + '%';
       $('#pipeline-msg').textContent = j.message || '';
+      renderSubSteps(j.sub_steps);
+
       if (j.status === 'complete') {
         clearInterval(_pollTimer);
         onPipelineComplete(j);
@@ -769,22 +1190,356 @@ function pollPipeline() {
         $('#pipeline-msg').textContent = 'Error: ' + (j.error || 'Unknown');
       }
     } catch(e) { /* ignore transient fetch errors */ }
-  }, 1500);
+  }, 1200);
 }
 
 /* =============================================================
-   STEP 4 — Complete
+   STEP 4 — Results + comparison viewer
    ============================================================= */
-function onPipelineComplete(data) {
-  showStep('complete');
-  $('#complete-summary').textContent = data.message || 'All outputs generated.';
+let compState = {
+  outputs: {},
+  frameCount: 0,
+  fps: 30,
+  duration: 0,
+  currentFrame: 0,
+  activeView: 'pose_skater',
+  playing: false,
+  playTimer: null,
+  imageCache: {},
+};
+
+async function onPipelineComplete(statusData) {
+  showStep('results');
+
+  // Fetch detailed output info
+  try {
+    const r = await fetch('/api/outputs/info');
+    const info = await r.json();
+    compState.outputs = info.outputs || {};
+    compState.frameCount = info.frame_count || statusData.frame_count || 0;
+    compState.fps = info.fps || statusData.fps || 30;
+    compState.duration = info.duration || statusData.duration || 0;
+  } catch(e) {
+    compState.frameCount = statusData.frame_count || 0;
+    compState.fps = statusData.fps || 30;
+    compState.duration = statusData.duration || 0;
+  }
+
+  compState.currentFrame = 0;
+  compState.imageCache = {};
+
+  // Build tabs
+  buildCompTabs();
+
+  // Setup slider
+  const slider = $('#frame-slider');
+  slider.max = Math.max(0, compState.frameCount - 1);
+  slider.value = 0;
+  updateFrameInfo(0);
+
+  // Load first frame
+  loadCompFrame(0);
+
+  // Build summary
+  buildSummary(statusData);
 }
 
+function buildCompTabs() {
+  const tabContainer = $('#comp-tabs');
+  tabContainer.innerHTML = '';
+
+  const views = [];
+  if (compState.outputs['pose_skater'])     views.push({key: 'pose_skater',     label: 'Pose'});
+  if (compState.outputs['mask_skateboard']) views.push({key: 'mask_skateboard', label: 'Board Mask'});
+  if (compState.outputs['mask_skater'])     views.push({key: 'mask_skater',     label: 'Skater Mask'});
+  // Always offer overlay if any mask exists
+  if (compState.outputs['mask_skateboard'] || compState.outputs['mask_skater']) {
+    views.push({key: 'overlay', label: 'Overlay'});
+  }
+
+  if (views.length === 0) {
+    tabContainer.innerHTML = '<span style="color:var(--text-muted);font-size:.78rem;">No outputs</span>';
+    return;
+  }
+
+  // Default to first available view
+  compState.activeView = views[0].key;
+
+  views.forEach(v => {
+    const btn = document.createElement('button');
+    btn.className = 'comp-tab' + (v.key === compState.activeView ? ' active' : '');
+    btn.textContent = v.label;
+    btn.dataset.view = v.key;
+    btn.addEventListener('click', () => {
+      $$('.comp-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      compState.activeView = v.key;
+      loadCompFrame(compState.currentFrame);
+    });
+    tabContainer.appendChild(btn);
+  });
+}
+
+function framePath(dir, idx) {
+  const info = compState.outputs[dir];
+  if (!info) return null;
+  const ext = info.ext || '.png';
+  return `/output/${dir}/frame_${String(idx).padStart(5, '0')}${ext}`;
+}
+
+function loadImage(url) {
+  if (compState.imageCache[url]) {
+    return Promise.resolve(compState.imageCache[url]);
+  }
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      compState.imageCache[url] = img;
+      // Keep cache bounded
+      const keys = Object.keys(compState.imageCache);
+      if (keys.length > 200) {
+        delete compState.imageCache[keys[0]];
+      }
+      resolve(img);
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function loadCompFrame(idx) {
+  compState.currentFrame = idx;
+
+  // Left panel: original frame
+  const leftBody = $('#comp-left-body');
+  const origPath = framePath('frames_original', idx);
+  if (origPath) {
+    loadImage(origPath).then(img => {
+      leftBody.innerHTML = '';
+      const el = document.createElement('img');
+      el.src = img.src;
+      el.alt = `Original frame ${idx}`;
+      leftBody.appendChild(el);
+    }).catch(() => {
+      leftBody.innerHTML = '<div class="placeholder">Frame not available</div>';
+    });
+  } else {
+    // Fallback to API
+    const fallback = `/api/frame/original/${idx}`;
+    leftBody.innerHTML = `<img src="${fallback}" alt="Original frame ${idx}">`;
+  }
+
+  // Right panel
+  const rightBody = $('#comp-right-body');
+  const view = compState.activeView;
+
+  if (view === 'overlay') {
+    drawOverlayFrame(idx, rightBody);
+  } else {
+    const path = framePath(view, idx);
+    if (path) {
+      loadImage(path).then(img => {
+        rightBody.innerHTML = '';
+        const el = document.createElement('img');
+        el.src = img.src;
+        el.alt = `${view} frame ${idx}`;
+        rightBody.appendChild(el);
+      }).catch(() => {
+        rightBody.innerHTML = '<div class="placeholder">Frame not available</div>';
+      });
+    } else {
+      rightBody.innerHTML = '<div class="placeholder">Output not available</div>';
+    }
+  }
+
+  // Preload nearby frames
+  preloadNearby(idx);
+}
+
+function drawOverlayFrame(idx, container) {
+  const origPath = framePath('frames_original', idx);
+  // Pick mask: prefer skateboard, fall back to skater
+  const maskDir = compState.outputs['mask_skateboard'] ? 'mask_skateboard' : 'mask_skater';
+  const maskPath = framePath(maskDir, idx);
+
+  if (!origPath || !maskPath) {
+    container.innerHTML = '<div class="placeholder">Overlay not available</div>';
+    return;
+  }
+
+  Promise.all([loadImage(origPath), loadImage(maskPath)]).then(([origImg, maskImg]) => {
+    let canvas = container.querySelector('canvas');
+    if (!canvas) {
+      container.innerHTML = '';
+      canvas = document.createElement('canvas');
+      container.appendChild(canvas);
+    }
+    const w = origImg.naturalWidth;
+    const h = origImg.naturalHeight;
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = '100%';
+    canvas.style.height = 'auto';
+    canvas.style.display = 'block';
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(origImg, 0, 0, w, h);
+
+    // Get mask data
+    const tmp = document.createElement('canvas');
+    tmp.width = w; tmp.height = h;
+    const tctx = tmp.getContext('2d');
+    tctx.drawImage(maskImg, 0, 0, w, h);
+    const maskData = tctx.getImageData(0, 0, w, h);
+
+    // Create colored overlay
+    const overlayData = ctx.createImageData(w, h);
+    const color = maskDir === 'mask_skateboard' ? [249, 115, 22] : [59, 130, 246]; // orange / blue
+    for (let i = 0; i < maskData.data.length; i += 4) {
+      if (maskData.data[i] > 127) {
+        overlayData.data[i]     = color[0];
+        overlayData.data[i + 1] = color[1];
+        overlayData.data[i + 2] = color[2];
+        overlayData.data[i + 3] = 90;
+      }
+    }
+    tctx.putImageData(overlayData, 0, 0);
+    ctx.drawImage(tmp, 0, 0);
+
+    // If skater mask also exists, draw it too
+    if (maskDir === 'mask_skateboard' && compState.outputs['mask_skater']) {
+      const skaterMaskPath = framePath('mask_skater', idx);
+      if (skaterMaskPath) {
+        loadImage(skaterMaskPath).then(skaterImg => {
+          tctx.clearRect(0, 0, w, h);
+          tctx.drawImage(skaterImg, 0, 0, w, h);
+          const sd = tctx.getImageData(0, 0, w, h);
+          const od = ctx.createImageData(w, h);
+          for (let i = 0; i < sd.data.length; i += 4) {
+            if (sd.data[i] > 127) {
+              od.data[i]     = 59;
+              od.data[i + 1] = 130;
+              od.data[i + 2] = 246;
+              od.data[i + 3] = 80;
+            }
+          }
+          tctx.putImageData(od, 0, 0);
+          ctx.drawImage(tmp, 0, 0);
+        }).catch(() => {});
+      }
+    }
+  }).catch(() => {
+    container.innerHTML = '<div class="placeholder">Could not generate overlay</div>';
+  });
+}
+
+function preloadNearby(idx) {
+  const dirs = ['frames_original', compState.activeView];
+  for (const dir of dirs) {
+    if (dir === 'overlay') continue;
+    for (let offset = 1; offset <= 5; offset++) {
+      const fi = idx + offset;
+      if (fi < compState.frameCount) {
+        const p = framePath(dir, fi);
+        if (p && !compState.imageCache[p]) {
+          const img = new Image();
+          img.src = p;
+          img.onload = () => { compState.imageCache[p] = img; };
+        }
+      }
+    }
+  }
+}
+
+function updateFrameInfo(idx) {
+  const fps = compState.fps || 30;
+  const time = (idx / fps).toFixed(2);
+  const total = ((compState.frameCount - 1) / fps).toFixed(2);
+  $('#frame-info').textContent = `Frame ${idx} / ${compState.frameCount - 1}  (${time}s / ${total}s)`;
+}
+
+/* Slider events */
+$('#frame-slider').addEventListener('input', (e) => {
+  const idx = parseInt(e.target.value, 10);
+  compState.currentFrame = idx;
+  updateFrameInfo(idx);
+  loadCompFrame(idx);
+});
+
+/* Play / Pause */
+$('#btn-play').addEventListener('click', togglePlay);
+
+function togglePlay() {
+  if (compState.playing) {
+    stopPlay();
+  } else {
+    startPlay();
+  }
+}
+
+function startPlay() {
+  compState.playing = true;
+  $('#btn-play').innerHTML = '&#9646;&#9646;'; // pause icon
+  const interval = 1000 / (compState.fps || 30);
+  compState.playTimer = setInterval(() => {
+    let next = compState.currentFrame + 1;
+    if (next >= compState.frameCount) next = 0;
+    compState.currentFrame = next;
+    $('#frame-slider').value = next;
+    updateFrameInfo(next);
+    loadCompFrame(next);
+  }, Math.max(interval, 33)); // cap at ~30fps display rate
+}
+
+function stopPlay() {
+  compState.playing = false;
+  $('#btn-play').innerHTML = '&#9654;'; // play icon
+  if (compState.playTimer) {
+    clearInterval(compState.playTimer);
+    compState.playTimer = null;
+  }
+}
+
+function buildSummary(data) {
+  const grid = $('#summary-grid');
+  grid.innerHTML = '';
+
+  const cards = [
+    {label: 'Frames', value: compState.frameCount, detail: `${compState.fps.toFixed(1)} fps`},
+    {label: 'Duration', value: compState.duration.toFixed(1) + 's', detail: ''},
+  ];
+
+  // Count output types
+  if (compState.outputs['pose_skater']) {
+    cards.push({label: 'Pose Frames', value: compState.outputs['pose_skater'].count, detail: 'pose_skater/'});
+  }
+  if (compState.outputs['mask_skateboard']) {
+    cards.push({label: 'Board Masks', value: compState.outputs['mask_skateboard'].count, detail: 'mask_skateboard/'});
+  }
+  if (compState.outputs['mask_skater']) {
+    cards.push({label: 'Skater Masks', value: compState.outputs['mask_skater'].count, detail: 'mask_skater/'});
+  }
+
+  cards.forEach(c => {
+    const div = document.createElement('div');
+    div.className = 'summary-card';
+    div.innerHTML = `
+      <div class="sc-label">${c.label}</div>
+      <div class="sc-value">${c.value}</div>
+      ${c.detail ? '<div class="sc-detail">' + c.detail + '</div>' : ''}
+    `;
+    grid.appendChild(div);
+  });
+}
+
+/* Process another video */
 $('#btn-new').addEventListener('click', () => {
-  // Reset
+  stopPlay();
+  compState.imageCache = {};
   window._frameB64 = null;
   fileInput.value = '';
   ytInput.value = '';
+  $('#video-info').classList.remove('show');
   showStep('upload');
 });
 
@@ -796,12 +1551,11 @@ $('#btn-new').addEventListener('click', () => {
     const r = await fetch('/api/state');
     const j = await r.json();
     if (j.has_video && j.status === 'idle') {
-      // Video was pre-loaded via --video CLI arg; trigger load
-      uploadSt.innerHTML = '<span class="spinner"></span> Reading pre-loaded video …';
+      uploadSt.innerHTML = '<span class="spinner"></span> Reading pre-loaded video ...';
       const fd = new FormData();
       const lr = await fetch('/api/load', {method:'POST', body: fd});
       const lj = await lr.json();
-      if (lr.ok) onVideoLoaded(lj);
+      if (lr.ok) onVideoLoaded(lj, j.video_path || 'Pre-loaded video');
       else uploadSt.textContent = '';
     }
   } catch(e) { /* server may not be ready yet */ }

@@ -45,6 +45,7 @@ services:
       - ./input:/data/input
       - ./output:/data/output
       - ./workflows:/app/workflows   # live-edit workflow templates
+      - ./src:/app/src               # live-edit source
 
     # ---- Environment ----
     environment:

@@ -4,7 +4,7 @@
 
 A 100% local pipeline that reskins dynamic human-object interactions (e.g., skateboard tricks) while enforcing strict frame-by-frame physical boundaries. No cloud APIs.
 
-Features automatic **YOLO + SAM 2.1** detection of both skater and skateboard, with a **local web UI** (`localhost:5000`) to validate segmentation masks before running the full pipeline. A headless CLI (`extract_physics.py`) is also available for scripted workflows.
+Features automatic **YOLO + SAM 2.1** detection of both skater and skateboard, with a **local web UI** (`localhost:5000`) to validate segmentation masks, track pipeline progress with granular sub-steps, and **compare outputs side-by-side** (original vs. pose/mask/overlay) with a frame-by-frame scrubber. A headless CLI (`extract_physics.py`) is also available for scripted workflows.
 
 Optimized for **RTX 3070 8GB VRAM**.
 
@@ -24,16 +24,19 @@ input.mp4  (or YouTube URL)
 |  2. SAM 2.1 segments both objects    |
 |  3. Browser preview for validation   |
 |  4. Approve → run full pipeline:     |
+|     +- Step 0: Extract originals    |
 |     +- Pass 1: DWPose (~1.5GB)      |
 |     |  (skeleton extraction)         |
 |     |  > VRAM cleanup                |
 |     +- Pass 2: SAM 2.1 (~3GB)       |
 |        (multi-object propagation)    |
+|  5. Results: side-by-side comparison |
+|     (original vs pose/mask viewer)   |
 +--------------------------------------+
-    |            |              |
-    v            v              v
-pose_skater/ mask_skateboard/ mask_skater/
-(PNG seq.)   (PNG seq.)       (PNG seq.)
+    |             |              |              |
+    v             v              v              v
+frames_orig/  pose_skater/ mask_skateboard/ mask_skater/
+(JPG seq.)    (PNG seq.)   (PNG seq.)       (PNG seq.)
     |            |              |
     v            v              v
 +--------------------------------------+
@@ -173,7 +176,8 @@ Open **http://localhost:5000** in your browser (NOT the Docker container IP). Th
 2. **Auto-detect** — YOLO finds the skater + skateboard, SAM 2.1 segments them on frame 0
 3. **Validate** — review the coloured mask overlays (blue = skater, orange = skateboard)
 4. **Manual fallback** — if auto-detect misses something, click directly on the objects
-5. **Approve** — runs the full DWPose + SAM propagation pipeline automatically
+5. **Approve** — runs the full DWPose + SAM propagation pipeline with live sub-step progress
+6. **Compare** — side-by-side viewer: scrub through original vs. pose/mask/overlay frame-by-frame with play/pause controls
 
 You can also pre-load a video:
 
@@ -218,6 +222,7 @@ Output appears in `./output/` on your host:
 
 ```
 output/
+  frames_original/     <- original video frames as JPEGs  [web UI only]
   mask_skateboard/     <- grayscale mask PNGs (skateboard)
   mask_skater/         <- grayscale mask PNGs (skater)  [web UI only]
   pose_skater/         <- RGB skeleton PNGs
@@ -414,7 +419,7 @@ python src/app.py --video input.mp4 --output output/
 python src/app.py --video "https://www.youtube.com/watch?v=VIDEO_ID" --output output/
 ```
 
-Upload your video, review the auto-detected masks, approve, and the full pipeline runs.
+Upload your video, review the auto-detected masks, approve, and the full pipeline runs. When complete, the built-in comparison viewer lets you scrub through original vs. output frames side-by-side.
 
 **Headless CLI (for scripting):**
 

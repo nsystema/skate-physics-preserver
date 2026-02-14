@@ -17,6 +17,7 @@ Opens http://localhost:5000
 
 import argparse
 import gc
+import io
 import json
 import os
 import re
@@ -29,7 +30,7 @@ import cv2
 import numpy as np
 import torch
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_file, send_from_directory
 
 # Make sibling modules importable
 _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -65,6 +66,10 @@ state = {
     "frame0_b64": None,        # base64 JPEG
     "frame_h": 0,
     "frame_w": 0,
+    # Video metadata
+    "fps": 0,
+    "frame_count": 0,
+    "duration": 0,
     # Detection results
     "detections": [],          # list[dict]
     "masks": {},               # {label: mask_np}
@@ -75,6 +80,8 @@ state = {
     "progress": 0,             # 0-100
     "message": "",
     "error": None,
+    # Pipeline sub-steps for detailed progress
+    "sub_steps": [],           # list[dict] with label, status, detail
 }
 
 # YouTube regex (borrowed from extract_physics.py)
@@ -111,6 +118,9 @@ def api_state():
         "video_path": state["video_path"],
         "has_detections": len(state["detections"]) > 0,
         "detections": state["detections"],
+        "fps": state.get("fps", 0),
+        "frame_count": state.get("frame_count", 0),
+        "duration": state.get("duration", 0),
     })
 
 
@@ -162,6 +172,8 @@ def load_video():
 
         cap = cv2.VideoCapture(video_path)
         ok, frame = cap.read()
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
         if not ok:
             return jsonify({"error": "Cannot read first frame. The video codec may not be supported (e.g. AV1). Try a different video or re-download in H.264 format."}), 500
@@ -172,6 +184,9 @@ def load_video():
         state["frame0_b64"] = frame_to_base64(frame)
         state["frame_h"] = h
         state["frame_w"] = w
+        state["fps"] = fps
+        state["frame_count"] = frame_count
+        state["duration"] = frame_count / fps if fps > 0 else 0
         state["status"] = "loaded"
 
         return jsonify({
@@ -179,6 +194,9 @@ def load_video():
             "frame": state["frame0_b64"],
             "width": w,
             "height": h,
+            "fps": fps,
+            "frame_count": frame_count,
+            "duration": frame_count / fps if fps > 0 else 0,
             "video_path": os.path.basename(video_path),
         })
     except Exception as exc:
@@ -334,26 +352,111 @@ def status():
         "progress": state["progress"],
         "message": state["message"],
         "error": state["error"],
+        "sub_steps": state.get("sub_steps", []),
+        "frame_count": state.get("frame_count", 0),
+        "fps": state.get("fps", 0),
+        "duration": state.get("duration", 0),
     })
+
+
+# ------------------------------------------------------------------
+# 5.  Output file serving & comparison viewer APIs
+# ------------------------------------------------------------------
+
+@app.route("/output/<path:subpath>")
+def serve_output(subpath):
+    """Serve files from the output directory (masks, poses, original frames)."""
+    out_dir = state.get("output_dir")
+    if not out_dir:
+        return jsonify({"error": "No output directory set"}), 400
+    abs_dir = os.path.abspath(out_dir)
+    return send_from_directory(abs_dir, subpath)
+
+
+@app.route("/api/frame/original/<int:idx>")
+def get_original_frame(idx):
+    """Serve a specific frame from the original video as JPEG (fallback if
+    pre-extracted frames are not available)."""
+    if not state["video_path"]:
+        return jsonify({"error": "No video loaded"}), 400
+
+    # Try pre-extracted frame first
+    if state["output_dir"]:
+        pre_path = os.path.join(state["output_dir"], "frames_original",
+                                f"frame_{idx:05d}.jpg")
+        if os.path.isfile(pre_path):
+            return send_file(pre_path, mimetype="image/jpeg")
+
+    # Fallback: extract on-the-fly
+    cap = cv2.VideoCapture(state["video_path"])
+    cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        return jsonify({"error": f"Cannot read frame {idx}"}), 404
+
+    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    return send_file(io.BytesIO(buf.tobytes()), mimetype="image/jpeg")
+
+
+@app.route("/api/video/original")
+def serve_video_file():
+    """Stream the original video file for HTML5 <video> playback."""
+    vp = state.get("video_path")
+    if not vp or not os.path.isfile(vp):
+        return jsonify({"error": "No video loaded"}), 400
+    return send_file(os.path.abspath(vp), mimetype="video/mp4")
+
+
+@app.route("/api/outputs/info")
+def outputs_info():
+    """Return info about available pipeline outputs (for the comparison viewer)."""
+    out_dir = state.get("output_dir", "")
+    info = {
+        "frame_count": state.get("frame_count", 0),
+        "fps": state.get("fps", 0),
+        "duration": state.get("duration", 0),
+        "outputs": {},
+    }
+    for name in ["frames_original", "pose_skater", "mask_skateboard", "mask_skater"]:
+        d = os.path.join(out_dir, name) if out_dir else ""
+        if d and os.path.isdir(d):
+            files = sorted(f for f in os.listdir(d) if f.lower().endswith(('.png', '.jpg')))
+            info["outputs"][name] = {
+                "count": len(files),
+                "dir": name,
+                "first": files[0] if files else None,
+                "ext": os.path.splitext(files[0])[1] if files else ".png",
+            }
+    return jsonify(info)
 
 
 # ===================================================================
 # Background pipeline
 # ===================================================================
 
+def _update_sub(idx, status, detail=""):
+    """Update a sub-step in state['sub_steps']."""
+    if 0 <= idx < len(state["sub_steps"]):
+        state["sub_steps"][idx]["status"] = status
+        if detail:
+            state["sub_steps"][idx]["detail"] = detail
+
+
 def _run_pipeline():
-    """Execute DWPose (pass 1) + SAM multi-object propagation (pass 2)."""
+    """Execute frame extraction + DWPose (pass 1) + SAM propagation (pass 2)."""
     try:
         video_path = state["video_path"]
         output_dir = state["output_dir"]
         device = state["device"]
 
+        frames_dir = os.path.join(output_dir, "frames_original")
         masks_skateboard_dir = os.path.join(output_dir, "mask_skateboard")
         masks_skater_dir = os.path.join(output_dir, "mask_skater")
         poses_dir = os.path.join(output_dir, "pose_skater")
         json_dir = os.path.join(output_dir, "pose_json")
 
-        # Map obj_ids ➜ detections
+        # Map obj_ids → detections
         prompts: dict[int, dict] = {}
         for det in state["detections"]:
             if det["label"] == "skateboard":
@@ -361,11 +464,49 @@ def _run_pipeline():
             elif det["label"] == "skater":
                 prompts[2] = det
 
+        # Initialize sub-steps
+        state["sub_steps"] = [
+            {"label": "Extract original frames", "status": "pending", "detail": ""},
+            {"label": "DWPose skeleton extraction", "status": "pending", "detail": ""},
+            {"label": "SAM 2.1 mask propagation", "status": "pending", "detail": ""},
+            {"label": "Save metadata", "status": "pending", "detail": ""},
+        ]
+
+        # ----------------------------------------------------------
+        # STEP 0 — Extract original frames (for comparison viewer)
+        # ----------------------------------------------------------
+        _update_sub(0, "running", "Reading video …")
+        state["message"] = "Extracting original frames for comparison viewer …"
+        state["progress"] = 1
+
+        os.makedirs(frames_dir, exist_ok=True)
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        idx = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            cv2.imwrite(
+                os.path.join(frames_dir, f"frame_{idx:05d}.jpg"),
+                frame,
+                [cv2.IMWRITE_JPEG_QUALITY, 90],
+            )
+            idx += 1
+        cap.release()
+
+        state["fps"] = fps
+        state["frame_count"] = idx
+        state["duration"] = idx / fps if fps > 0 else 0
+        state["progress"] = 5
+        _update_sub(0, "complete", f"{idx} frames")
+
         # ----------------------------------------------------------
         # PASS 1 — DWPose skeleton extraction
         # ----------------------------------------------------------
+        _update_sub(1, "running", "Loading DWPose model …")
         state["message"] = "Pass 1/2 — Extracting skater pose (DWPose) …"
-        state["progress"] = 5
+        state["progress"] = 8
 
         from tracking.skater_pose import SkaterPoseExtractor
 
@@ -382,11 +523,13 @@ def _run_pipeline():
         gc.collect()
 
         state["progress"] = 40
+        _update_sub(1, "complete", f"{n_pose} poses extracted")
         state["message"] = f"Pass 1/2 done — {n_pose} pose frames."
 
         # ----------------------------------------------------------
         # PASS 2 — SAM 2.1 multi-object mask propagation
         # ----------------------------------------------------------
+        _update_sub(2, "running", "Loading SAM 2.1 model …")
         state["message"] = "Pass 2/2 — Loading SAM 2.1 video predictor …"
         state["progress"] = 45
 
@@ -400,6 +543,7 @@ def _run_pipeline():
         tracker.init_video(video_path)
 
         state["progress"] = 55
+        _update_sub(2, "running", "Initializing prompts …")
 
         output_dirs: dict[int, str] = {}
         for oid, det in prompts.items():
@@ -411,9 +555,11 @@ def _run_pipeline():
 
         state["message"] = "Propagating masks through video …"
         state["progress"] = 60
+        _update_sub(2, "running", "Propagating masks …")
 
         def _prog(frac):
-            state["progress"] = 60 + int(frac * 35)
+            state["progress"] = 60 + int(frac * 33)
+            _update_sub(2, "running", f"{int(frac * 100)}% complete")
 
         counts = tracker.propagate_and_save_multi(
             output_dirs=output_dirs,
@@ -421,19 +567,28 @@ def _run_pipeline():
         )
         tracker.cleanup()
 
+        n_mask = max(counts.values()) if counts else 0
+        _update_sub(2, "complete", f"{n_mask} mask frames")
+
         # ----------------------------------------------------------
         # Metadata
         # ----------------------------------------------------------
-        n_mask = max(counts.values()) if counts else 0
+        _update_sub(3, "running", "Writing metadata …")
+        state["progress"] = 95
+        state["message"] = "Saving pipeline metadata …"
 
         metadata = {
             "source": video_path,
             "video": os.path.abspath(video_path),
+            "fps": fps,
+            "frame_count": state["frame_count"],
+            "duration": state["duration"],
             "detections": state["detections"],
             "object_counts": {str(k): v for k, v in counts.items()},
             "mask_frames": n_mask,
             "pose_frames": n_pose,
             "output_dir": os.path.abspath(output_dir),
+            "frames_original_dir": os.path.abspath(frames_dir),
             "masks_skateboard_dir": os.path.abspath(masks_skateboard_dir),
             "masks_skater_dir": os.path.abspath(masks_skater_dir),
             "poses_dir": os.path.abspath(poses_dir),
@@ -442,6 +597,8 @@ def _run_pipeline():
         meta_path = os.path.join(output_dir, "tracking_metadata.json")
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)
+
+        _update_sub(3, "complete", "Done")
 
         state["status"] = "complete"
         state["progress"] = 100
@@ -456,6 +613,12 @@ def _run_pipeline():
         state["status"] = "error"
         state["error"] = str(exc)
         state["message"] = f"Pipeline failed: {exc}"
+        # Mark current running sub-step as error
+        for ss in state.get("sub_steps", []):
+            if ss["status"] == "running":
+                ss["status"] = "error"
+                ss["detail"] = str(exc)
+                break
         import traceback; traceback.print_exc()
 
 

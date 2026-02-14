@@ -120,6 +120,7 @@ class SkaterPoseExtractor:
             canvas,
             keypoints,
             scores,
+            openpose_skeleton=True,
             kpt_thr=kpt_thr,
         )
 
@@ -151,19 +152,31 @@ class SkaterPoseExtractor:
             for (x, y), s in zip(kp, score):
                 flat_all.extend([float(x), float(y), float(s)])
 
-            # Split into body / face / hands per COCO-WholeBody standard
-            # Body: 0-16 (17 points), Feet: 17-22 (6 points)
-            # Face: 23-90 (68 points), Left Hand: 91-111 (21 points)
-            # Right Hand: 112-132 (21 points)
-            person_dict = {
-                "pose_keypoints_2d": flat_all[:23 * 3],       # body + feet
-                "face_keypoints_2d": flat_all[23 * 3:91 * 3],  # face
-                "hand_left_keypoints_2d": flat_all[91 * 3:112 * 3],
-                "hand_right_keypoints_2d": flat_all[112 * 3:133 * 3],
-            }
-
-            # Fallback for models with fewer points
-            if n_points < 133:
+            # Split into body / face / hands
+            if n_points == 134:
+                # OpenPose format (to_openpose=True):
+                # Body: 0-17 (18 points), Feet: 18-23 (6 points)
+                # Face: 24-91 (68 points), Left Hand: 92-112 (21 points)
+                # Right Hand: 113-133 (21 points)
+                person_dict = {
+                    "pose_keypoints_2d": flat_all[:24 * 3],
+                    "face_keypoints_2d": flat_all[24 * 3:92 * 3],
+                    "hand_left_keypoints_2d": flat_all[92 * 3:113 * 3],
+                    "hand_right_keypoints_2d": flat_all[113 * 3:134 * 3],
+                }
+            elif n_points == 133:
+                # COCO-WholeBody format (to_openpose=False):
+                # Body: 0-16 (17 points), Feet: 17-22 (6 points)
+                # Face: 23-90 (68 points), Left Hand: 91-111 (21 points)
+                # Right Hand: 112-132 (21 points)
+                person_dict = {
+                    "pose_keypoints_2d": flat_all[:23 * 3],
+                    "face_keypoints_2d": flat_all[23 * 3:91 * 3],
+                    "hand_left_keypoints_2d": flat_all[91 * 3:112 * 3],
+                    "hand_right_keypoints_2d": flat_all[112 * 3:133 * 3],
+                }
+            else:
+                # Fallback for models with other keypoint counts
                 person_dict = {"pose_keypoints_2d": flat_all}
 
             people_list.append(person_dict)
