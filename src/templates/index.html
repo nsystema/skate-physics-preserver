@@ -891,16 +891,29 @@ a { color: var(--primary-h); text-decoration: none; }
       </small>
     </div>
 
-    <!-- Positive Prompt -->
+    <!-- Skater Prompt -->
     <div class="form-group">
-      <label class="form-label">Positive Prompt</label>
-      <textarea id="positive-prompt" class="form-textarea" rows="3"
-        placeholder="e.g. cyberpunk samurai riding a neon hoverboard, cinematic lighting"></textarea>
+      <label class="form-label">Skater / Character Prompt</label>
+      <textarea id="skater-prompt" class="form-textarea" rows="2"
+        placeholder="e.g. cyberpunk samurai warrior, dynamic pose, cinematic lighting"></textarea>
+      <small style="color:var(--text-muted); display:block; margin-top:3px;">
+        Describes how the skater should be reskinned. Guided by the DWPose skeleton.
+      </small>
+    </div>
+
+    <!-- Skateboard Prompt -->
+    <div class="form-group">
+      <label class="form-label">Skateboard / Board Prompt</label>
+      <textarea id="skateboard-prompt" class="form-textarea" rows="2"
+        placeholder="e.g. neon hoverboard with glowing edges, futuristic"></textarea>
+      <small style="color:var(--text-muted); display:block; margin-top:3px;">
+        Describes how the skateboard should be reskinned. Guided by the board mask shape.
+      </small>
     </div>
 
     <!-- Negative Prompt -->
     <div class="form-group">
-      <label class="form-label">Negative Prompt</label>
+      <label class="form-label">Negative Prompt <span style="color:var(--text-muted); font-weight:normal;">(shared)</span></label>
       <textarea id="negative-prompt" class="form-textarea" rows="2">blurry, distorted, deformed, low quality</textarea>
     </div>
 
@@ -1581,12 +1594,17 @@ async function startComfyUIManually() {
 }
 
 async function startGeneration() {
-  const positivePrompt = $('#positive-prompt').value.trim();
+  const skaterPrompt = $('#skater-prompt').value.trim();
+  const skateboardPrompt = $('#skateboard-prompt').value.trim();
   const negativePrompt = $('#negative-prompt').value.trim();
   const server = $('#comfyui-server').value.trim();
 
-  if (!positivePrompt) {
-    toast('Please enter a positive prompt.');
+  if (!skaterPrompt) {
+    toast('Please enter a skater/character prompt.');
+    return;
+  }
+  if (!skateboardPrompt) {
+    toast('Please enter a skateboard/board prompt.');
     return;
   }
 
@@ -1595,7 +1613,8 @@ async function startGeneration() {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
-        positive_prompt: positivePrompt,
+        skater_prompt: skaterPrompt,
+        skateboard_prompt: skateboardPrompt,
         negative_prompt: negativePrompt,
         server: server,
       }),

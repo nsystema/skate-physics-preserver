@@ -692,13 +692,16 @@ def start_generation():
         return jsonify({"error": "Stage 1 (extraction) must complete first."}), 400
 
     data = request.get_json(force=True) if request.is_json else {}
-    positive_prompt = data.get("positive_prompt", "").strip()
+    skater_prompt = data.get("skater_prompt", "").strip()
+    skateboard_prompt = data.get("skateboard_prompt", "").strip()
     negative_prompt = data.get("negative_prompt",
                                "blurry, distorted, deformed, low quality").strip()
     server = data.get("server", state["comfyui_server"])
 
-    if not positive_prompt:
-        return jsonify({"error": "Positive prompt is required."}), 400
+    if not skater_prompt:
+        return jsonify({"error": "Skater prompt is required."}), 400
+    if not skateboard_prompt:
+        return jsonify({"error": "Skateboard prompt is required."}), 400
 
     state["comfyui_server"] = server
     state["gen_status"] = "running"
@@ -707,7 +710,8 @@ def start_generation():
     state["gen_error"] = None
     state["gen_sub_steps"] = []
     state["generated_video_path"] = None
-    state["_positive_prompt"] = positive_prompt
+    state["_skater_prompt"] = skater_prompt
+    state["_skateboard_prompt"] = skateboard_prompt
     state["_negative_prompt"] = negative_prompt
 
     t = threading.Thread(target=_run_generation, daemon=True)
@@ -1012,7 +1016,8 @@ def _run_generation():
         skater_masks_dir = os.path.join(state["output_dir"], "mask_skater")
         poses_dir = os.path.join(state["output_dir"], "pose_skater")
         output_dir = os.path.join(state["output_dir"], "generated")
-        positive_prompt = state["_positive_prompt"]
+        skater_prompt = state["_skater_prompt"]
+        skateboard_prompt = state["_skateboard_prompt"]
         negative_prompt = state["_negative_prompt"]
 
         state["gen_sub_steps"] = [
@@ -1065,25 +1070,29 @@ def _run_generation():
                 raise FileNotFoundError(f"{label} not found: {path}")
 
         # Progress callback
+        # pct is the orchestrator's overall pipeline fraction (0.0 → 1.0).
+        # Map directly to gen_progress (0-100) with max() for monotonic progress.
         def on_progress(event, detail, pct):
+            # Compute smooth progress from orchestrator's overall fraction
+            new_prog = max(state["gen_progress"], int(pct * 100))
             if event == "uploading":
                 _update_gen_sub(1, "running", detail)
-                state["gen_progress"] = 5 + int(pct * 25)
+                state["gen_progress"] = new_prog
                 state["gen_message"] = f"Uploading: {detail}"
             elif event == "injecting":
                 _update_gen_sub(1, "complete")
                 _update_gen_sub(2, "running", detail)
-                state["gen_progress"] = 32
+                state["gen_progress"] = new_prog
                 state["gen_message"] = detail
             elif event == "generating":
                 _update_gen_sub(2, "complete")
                 _update_gen_sub(3, "running", detail)
-                state["gen_progress"] = 35 + int(pct * 55)
+                state["gen_progress"] = new_prog
                 state["gen_message"] = f"Generating: {detail}"
             elif event == "retrieving":
                 _update_gen_sub(3, "complete")
                 _update_gen_sub(4, "running", detail)
-                state["gen_progress"] = 92
+                state["gen_progress"] = new_prog
                 state["gen_message"] = detail
             elif event == "complete":
                 _update_gen_sub(4, "complete", detail)
@@ -1099,7 +1108,8 @@ def _run_generation():
             source_video_path=source_video,
             masks_dir=masks_dir,
             poses_dir=poses_dir,
-            positive_prompt=positive_prompt,
+            skater_prompt=skater_prompt,
+            skateboard_prompt=skateboard_prompt,
             negative_prompt=negative_prompt,
             output_dir=output_dir,
             skater_masks_dir=skater_masks_dir,
