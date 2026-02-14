@@ -4,7 +4,7 @@
 
 A 100% local pipeline that reskins dynamic human-object interactions (e.g., skateboard tricks) while enforcing strict frame-by-frame physical boundaries. No cloud APIs.
 
-Features automatic **YOLO + SAM 2.1** detection of both skater and skateboard, with a **local web UI** (`localhost:5000`) that handles **all three pipeline stages** (extraction, generation, validation) through button-driven interaction. The UI provides live progress tracking, side-by-side comparison viewers (original vs. generated), frame-by-frame pose/mask/overlay scrubbing, and IoU validation charts. A headless CLI (`extract_physics.py`) is also available for scripted workflows.
+All three stages -- extraction, generation, and validation -- run through a single **local web UI** at `localhost:5000`. Upload a video, review auto-detected masks, approve, enter a creative prompt, generate, validate IoU, and inspect results. Everything is button-driven. A headless CLI is also available for scripted workflows.
 
 Optimized for **RTX 3070 8GB VRAM**.
 
@@ -17,137 +17,82 @@ input.mp4  (or YouTube URL)
     |
     v
 +----------------------------------------------+
-|  app.py  (Web UI on localhost:5000)          |
-|  All 3 stages in one UI, button-driven       |
+|  app.py — Web UI (localhost:5000)            |
+|  All 3 stages, button-driven                 |
 |                                              |
-|  STAGE 1 — Extract Physics                   |
-|  1. YOLO auto-detect skater + skateboard     |
-|  2. SAM 2.1 segments both objects            |
-|  3. Browser preview for validation           |
-|  4. Approve → DWPose + SAM propagation       |
+|  Stage 1: Extract Physics                    |
+|    YOLO detect -> SAM 2.1 segment            |
+|    -> approve -> DWPose + SAM propagation    |
 |                                              |
-|  STAGE 2 — Generate Reskin                   |
-|  5. Enter prompts, click Generate            |
-|  6. ComfyUI headless API (Wan 2.1 VACE)     |
-|  7. Live progress via WebSocket              |
+|  Stage 2: Generate Reskin                    |
+|    Enter prompts -> ComfyUI API              |
+|    -> live WebSocket progress                |
 |                                              |
-|  STAGE 3 — Validate IoU                      |
-|  8. Click Run Validation                     |
-|  9. Reverse-track generated video (SAM 2.1)  |
-| 10. Frame-by-frame IoU with chart + report   |
+|  Stage 3: Validate IoU                       |
+|    Reverse-track with SAM 2.1                |
+|    -> frame-by-frame IoU chart + report      |
 |                                              |
-|  RESULTS — Full comparison viewer            |
-|  Original vs generated + pose/mask/overlay   |
+|  Results: comparison viewer                  |
+|    Original vs generated, pose/mask/overlay  |
 +----------------------------------------------+
     |                    |                |
     v                    v                v
-frames_orig/     output/generated/   iou_report.json
-pose_skater/       output.mp4
-mask_skateboard/
-mask_skater/
+output/              output/          output/
+  frames_original/     generated/       iou_report.json
+  pose_skater/           output.mp4
+  mask_skateboard/
+  mask_skater/
 ```
-
-> The CLI script `extract_physics.py` supports `--bbox` for explicit coordinates
-> or auto-detection when omitted. No GUI or display required.
 
 ---
 
-## Docker Setup (Recommended)
+## Quick Start (Docker)
 
 Docker eliminates every dependency issue. One build, zero debugging.
 
 ### Prerequisites
 
-| Requirement | How to check | Install link |
+| Requirement | Check with | Install |
 |---|---|---|
 | Docker Desktop (WSL2 backend) | `docker --version` | [docker.com/desktop](https://www.docker.com/products/docker-desktop/) |
 | NVIDIA GPU Driver 525+ | `nvidia-smi` | [nvidia.com/drivers](https://www.nvidia.com/download/index.aspx) |
-| NVIDIA Container Toolkit | `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi` | see below |
-| ~15 GB free disk space | for the Docker image | |
+| NVIDIA Container Toolkit | `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi` | [see below](#nvidia-container-toolkit) |
+| ~15 GB free disk | for the Docker image | |
 
-**Windows Docker Desktop users:** Make sure "Use the WSL 2 based engine" is ON in Settings > General. GPU passthrough works automatically with recent Docker Desktop versions (4.x+).
-
-**Linux users** -- install NVIDIA Container Toolkit if the test above fails:
-
-```bash
-# Ubuntu / Debian
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-sudo systemctl restart docker
-```
-
-### Step 1: Build the Image
+### 1. Build
 
 ```bash
 cd skate-physics-preserver
-docker compose build
+docker compose build          # ~10-15 min first time, cached after
 ```
 
-First build takes ~10-15 minutes (downloads PyTorch + CUDA). Subsequent rebuilds use Docker cache and finish in seconds.
-
-### Step 2: Download SAM2 Checkpoint
+### 2. Download SAM2 checkpoint
 
 ```bash
-# Create the checkpoints folder
 mkdir checkpoints
-
-# Download SAM 2.1 Hiera-Small (~150 MB)
-curl -L -o checkpoints/sam2.1_hiera_small.pt ^
+curl -L -o checkpoints/sam2.1_hiera_small.pt \
   https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
 ```
 
-PowerShell alternative:
+<details>
+<summary>PowerShell</summary>
 
 ```powershell
 New-Item -ItemType Directory -Force checkpoints
 Invoke-WebRequest -Uri "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt" `
   -OutFile "checkpoints/sam2.1_hiera_small.pt"
 ```
+</details>
 
-DWPose ONNX models are auto-downloaded inside the container on first run (~200 MB, cached in the Docker layer).
+DWPose ONNX models auto-download on first run (~200 MB, cached).
 
-### Step 3: Verify Everything Works
+### 3. Verify
 
 ```bash
 docker compose run --rm pipeline src/extract_physics.py --check
 ```
 
-Expected output:
-
-```
-============================================================
-  DEPENDENCY CHECK
-============================================================
-  [OK] torch 2.6.0
-  [OK] CUDA available: NVIDIA GeForce RTX 3070 (8.0 GB)
-  [OK] sam2 (SAM 2.1)
-  [OK] rtmlib (DWPose)
-  [OK] onnxruntime 1.20.1 (providers: ['CUDAExecutionProvider', ...])
-  [OK] opencv 4.11.0
-  [OK] numpy 1.26.4
-============================================================
-  All dependencies OK. Ready to run.
-============================================================
-```
-
-### Step 4: Run the Pipeline
-
-Place your source video in `./input/`, **or pass a YouTube URL directly**:
-
-```
-skate-physics-preserver/
-  input/
-    skate_clip.mp4       <-- your video here (optional if using a URL)
-  checkpoints/
-    sam2.1_hiera_small.pt
-```
-
-**Stage 1 -- Extract tracking data (Web UI — recommended):**
-
-Linux / macOS / Git Bash:
+### 4. Launch the Web UI
 
 ```bash
 docker compose run --rm -p 5000:5000 pipeline src/app.py \
@@ -155,26 +100,28 @@ docker compose run --rm -p 5000:5000 pipeline src/app.py \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 
-PowerShell:
+<details>
+<summary>PowerShell (single line)</summary>
 
 ```powershell
 docker compose run --rm -p 5000:5000 pipeline src/app.py --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
+</details>
 
-Open **http://localhost:5000** in your browser (NOT the Docker container IP). The web UI handles **all three stages** with button-driven interaction:
+Open **http://localhost:5000** in your browser. The UI walks you through six steps:
 
-1. **Upload** a video file or paste a YouTube URL
-2. **Auto-detect** — YOLO finds the skater + skateboard, SAM 2.1 segments them on frame 0
-3. **Validate** — review the coloured mask overlays (blue = skater, orange = skateboard)
-4. **Manual fallback** — if auto-detect misses something, click directly on the objects
-5. **Approve** — runs the full DWPose + SAM propagation pipeline with live sub-step progress
-6. **Generate** — enter creative prompts and generate a reskinned video via ComfyUI (requires ComfyUI running, see below)
-7. **Validate IoU** — reverse-track the generated video with SAM 2.1 and view frame-by-frame IoU results with pass/fail reporting
-8. **Results** — side-by-side viewer for original vs. generated video, frame-by-frame pose/mask/overlay scrubber, and IoU chart
+| Step | What happens |
+|------|-------------|
+| **1. Upload** | Drop a video file or paste a YouTube URL |
+| **2. Detect** | YOLO finds skater + skateboard, SAM 2.1 segments them on frame 0. Manual click fallback if needed. |
+| **3. Extract** | Approve masks, DWPose skeletons + SAM mask propagation run with live progress |
+| **4. Generate** | Enter positive/negative prompts, check ComfyUI connection, click Generate |
+| **5. Validate** | Reverse-track the generated video, view per-frame IoU chart and pass/fail result |
+| **6. Results** | Side-by-side original vs generated video, frame-by-frame pose/mask/overlay scrubber, IoU report |
 
-You can also pre-load a video:
+> Stages 2 and 3 are optional -- skip either with the UI buttons and go straight to results.
 
-Linux / macOS / Git Bash:
+You can also pre-load a video from the command line:
 
 ```bash
 docker compose run --rm -p 5000:5000 pipeline src/app.py \
@@ -183,250 +130,91 @@ docker compose run --rm -p 5000:5000 pipeline src/app.py \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 
-PowerShell:
+YouTube URLs work too: `--video "https://www.youtube.com/watch?v=VIDEO_ID"`
 
-```powershell
-docker compose run --rm -p 5000:5000 pipeline src/app.py --video /data/input/skate_clip.mp4 --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
-```
+### ComfyUI requirement for Stage 2
 
-> YouTube URLs work too: `--video "https://www.youtube.com/watch?v=VIDEO_ID"`
-
-**Stage 1 -- Extract tracking data (headless CLI — for scripting):**
-
-Linux / macOS / Git Bash:
-
-```bash
-docker compose run --rm pipeline src/extract_physics.py \
-  --video /data/input/skate_clip.mp4 \
-  --output /data/output \
-  --bbox "120,340,280,410" \
-  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
-```
-
-PowerShell:
-
-```powershell
-docker compose run --rm pipeline src/extract_physics.py --video /data/input/skate_clip.mp4 --output /data/output --bbox "120,340,280,410" --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
-```
-
-> In CLI mode, `--bbox` is optional — if omitted, the script attempts contour-based auto-detection. The web UI uses YOLO for more reliable detection.
-
-Output appears in `./output/` on your host:
-
-```
-output/
-  frames_original/     <- original video frames as JPEGs  [web UI only]
-  mask_skateboard/     <- grayscale mask PNGs (skateboard)
-  mask_skater/         <- grayscale mask PNGs (skater)  [web UI only]
-  pose_skater/         <- RGB skeleton PNGs
-  pose_json/           <- per-frame keypoint JSON
-  tracking_metadata.json
-```
-
-**Stage 2 -- Generate reskin (requires ComfyUI running on host):**
-
-Start ComfyUI on your host machine first:
+The Generate step talks to a ComfyUI server. Start it on your host machine **before** clicking Generate:
 
 ```bash
 cd /path/to/ComfyUI
 python main.py --listen 0.0.0.0 --port 8188 --lowvram
 ```
 
-Then from the project directory:
+The web UI's "Check Connection" button verifies connectivity before you start. Default server address is `127.0.0.1:8188` (change it in the UI if needed).
 
-Linux / macOS / Git Bash:
-
-```bash
-docker compose run --rm pipeline src/generate_reskin.py \
-  --source-video /data/input/skate_clip.mp4 \
-  --masks-dir /data/output/mask_skateboard \
-  --poses-dir /data/output/pose_skater \
-  --positive-prompt "cyberpunk samurai riding a neon hoverboard, cinematic" \
-  --negative-prompt "blurry, distorted, deformed" \
-  --output-dir /data/output/generated \
-  --server host.docker.internal:8188
-```
-
-PowerShell:
-
-```powershell
-docker compose run --rm pipeline src/generate_reskin.py --source-video /data/input/skate_clip.mp4 --masks-dir /data/output/mask_skateboard --poses-dir /data/output/pose_skater --positive-prompt "cyberpunk samurai riding a neon hoverboard, cinematic" --negative-prompt "blurry, distorted, deformed" --output-dir /data/output/generated --server host.docker.internal:8188
-```
-
-> On Linux, replace `host.docker.internal` with your host's LAN IP (e.g., `192.168.1.100`), or add `--network host` to the docker run command.
-
-**Stage 3 -- Validate IoU:**
-
-Linux / macOS / Git Bash:
-
-```bash
-docker compose run --rm pipeline src/evaluate_iou.py \
-  --metadata /data/output/tracking_metadata.json \
-  --generated /data/output/generated/output.mp4 \
-  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
-```
-
-PowerShell:
-
-```powershell
-docker compose run --rm pipeline src/evaluate_iou.py --metadata /data/output/tracking_metadata.json --generated /data/output/generated/output.mp4 --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
-```
-
-### Quick-Reference Commands
-
-Linux / macOS / Git Bash:
-
-```bash
-# Build image
-docker compose build
-
-# Launch web validation UI (recommended)
-docker compose run --rm -p 5000:5000 pipeline src/app.py --output /data/output \
-  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
-
-# Dependency check
-docker compose run --rm pipeline src/extract_physics.py --check
-
-# Check if ComfyUI is reachable
-docker compose run --rm pipeline src/generate_reskin.py --check --server host.docker.internal:8188
-
-# Interactive shell inside container (for debugging)
-docker compose run --rm --entrypoint bash pipeline
-
-# Run with verbose GPU info
-docker compose run --rm --entrypoint nvidia-smi pipeline
-```
-
-PowerShell:
-
-```powershell
-# Build image
-docker compose build
-
-# Launch web validation UI (recommended)
-docker compose run --rm -p 5000:5000 pipeline src/app.py --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
-
-# Dependency check
-docker compose run --rm pipeline src/extract_physics.py --check
-
-# Check if ComfyUI is reachable
-docker compose run --rm pipeline src/generate_reskin.py --check --server host.docker.internal:8188
-
-# Interactive shell inside container (for debugging)
-docker compose run --rm --entrypoint bash pipeline
-
-# Run with verbose GPU info
-docker compose run --rm --entrypoint nvidia-smi pipeline
-```
-
-### Docker Troubleshooting
-
-**"took too long to respond" / can't connect to the web UI**
-> Always open **http://localhost:5000** in your browser. Do NOT use the Docker container's internal IP (e.g., `172.18.0.x`) — it is not accessible from the Windows host. If `localhost:5000` doesn't work, verify the container started successfully (you should see the "Web Validation UI" banner in the terminal).
-
-**PowerShell multi-line command errors (`--` operators, `\` not recognized)**
-> PowerShell does not use `\` for line continuation. Either put the entire command on one line, or use backtick (`` ` ``) at the end of each line. See command examples above.
-
-**"no matching manifest for windows/amd64"**
-> Docker Desktop is set to Windows containers. Switch to Linux containers: right-click Docker tray icon > "Switch to Linux containers".
-
-**"could not select device driver" / GPU not detected**
-> 1. Verify driver: `nvidia-smi` on host must work.
-> 2. Docker Desktop: Settings > Resources > WSL Integration > enable your distro.
-> 3. Test GPU: `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi`
-
-**"CUDA out of memory" inside container**
-> Close other GPU-heavy apps (games, browsers with HW accel). The container shares your 8 GB VRAM with the host.
-
-**Build fails at "pip install sam2"**
-> Transient network error. Re-run `docker compose build` -- Docker layer cache means it resumes where it left off.
-
-**"host.docker.internal" not resolving (Linux)**
-> Add `--add-host=host.docker.internal:host-gateway` to your docker run command, or use `--network host`.
+> On Docker for Windows, the UI resolves `host.docker.internal` automatically. On Linux, use your host's LAN IP or add `--network host`.
 
 ---
 
 ## Native Setup (Without Docker)
 
-If you prefer a bare-metal install:
-
-### 1. Environment Setup
+### 1. Environment
 
 ```bash
-# Create virtual environment
 python -m venv venv
+source venv/bin/activate          # Linux/Mac
+# .\venv\Scripts\Activate.ps1    # Windows PowerShell
 
-# Activate (Windows PowerShell)
-.\venv\Scripts\Activate.ps1
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+  --index-url https://download.pytorch.org/whl/cu124
 
-# Activate (Linux/Mac)
-source venv/bin/activate
-
-# Install PyTorch with CUDA 12.4
-pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-
-# Install SAM 2.1 from source
-set SAM2_BUILD_CUDA=0
+set SAM2_BUILD_CUDA=0             # Windows without nvcc
 pip install git+https://github.com/facebookresearch/sam2.git@main
 
-# Install rtmlib + ONNX Runtime GPU
 pip install rtmlib==0.0.15
 pip uninstall -y onnxruntime
 pip install onnxruntime-gpu==1.20.1
 
-# Install remaining dependencies
-pip install opencv-python==4.11.0.86 "av>=12.0.0" websocket-client requests tqdm matplotlib "numpy<2.0" hydra-core==1.3.2 yt-dlp
-
-# Install auto-detection + web UI dependencies
-pip install "ultralytics>=8.3.0" "flask>=3.0.0"
+pip install opencv-python==4.11.0.86 "av>=12.0.0" websocket-client \
+  requests tqdm matplotlib "numpy<2.0" hydra-core==1.3.2 yt-dlp \
+  "ultralytics>=8.3.0" "flask>=3.0.0"
 ```
 
-> **Note:** Set `SAM2_BUILD_CUDA=0` on Windows if you don't have `nvcc` in PATH.
-> YOLOv8-nano weights (~6 MB) are auto-downloaded on first run.
-
-### 2. Download Model Checkpoints
+### 2. Download checkpoint
 
 ```bash
 mkdir checkpoints
-curl -L -o checkpoints/sam2.1_hiera_small.pt https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
+curl -L -o checkpoints/sam2.1_hiera_small.pt \
+  https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
 ```
 
-### 3. Verify Installation
+### 3. Verify
 
 ```bash
 python src/extract_physics.py --check
 ```
 
-### 4. Run the Pipeline
-
-**Web UI (recommended) -- auto-detects both skater and skateboard, no manual bbox:**
+### 4. Launch the Web UI
 
 ```bash
-# Launch the web validation UI (opens http://localhost:5000)
 python src/app.py --output output/
 
-# Or pre-load a video
+# or pre-load a video
 python src/app.py --video input.mp4 --output output/
 
-# Or with a YouTube URL
+# or a YouTube URL
 python src/app.py --video "https://www.youtube.com/watch?v=VIDEO_ID" --output output/
 ```
 
-Upload your video, review the auto-detected masks, approve, and the full pipeline runs. When extraction completes, enter your prompts and click **Generate** to create a reskinned video via ComfyUI (must be running). Then click **Run Validation** to measure IoU. The built-in comparison viewer lets you scrub through original vs. output frames side-by-side, and view generated video comparisons with IoU charts.
+Open **http://localhost:5000** -- same six-step UI as Docker.
 
-> **Note:** Stages 2 (generation) and 3 (validation) are optional — you can skip either from the UI buttons and proceed directly to results.
+---
 
-**Headless CLI (for scripting):**
+## Headless CLI (for scripting)
+
+All three stages can also be run from the command line without the web UI.
+
+**Stage 1 -- Extract:**
 
 ```bash
-# With explicit bbox
-python src/extract_physics.py --video input.mp4 --output output/ --bbox "120,340,280,410"
-
-# Auto-detect bbox (contour-based fallback)
-python src/extract_physics.py --video input.mp4 --output output/
+python src/extract_physics.py \
+  --video input.mp4 \
+  --output output/ \
+  --bbox "120,340,280,410"        # optional, auto-detects if omitted
 ```
 
-**Stage 2 -- Generate reskin (ComfyUI must be running):**
+**Stage 2 -- Generate** (ComfyUI must be running):
 
 ```bash
 python src/generate_reskin.py \
@@ -437,12 +225,69 @@ python src/generate_reskin.py \
   --output-dir output/generated
 ```
 
-**Stage 3 -- Validate IoU:**
+**Stage 3 -- Validate:**
 
 ```bash
 python src/evaluate_iou.py \
   --metadata output/tracking_metadata.json \
   --generated output/generated/output.mp4
+```
+
+**Output structure:**
+
+```
+output/
+  frames_original/         # original frames (JPEG)
+  pose_skater/             # skeleton overlays (PNG)
+  pose_json/               # per-frame keypoint JSON
+  mask_skateboard/         # skateboard masks (PNG)
+  mask_skater/             # skater masks (PNG)
+  tracking_metadata.json
+  generated/               # Stage 2 output
+    output.mp4
+  iou_report.json          # Stage 3 report
+```
+
+---
+
+## ComfyUI Setup
+
+Stage 2 (generation) requires a running ComfyUI server with specific custom nodes and models.
+
+### Custom Nodes
+
+Install in ComfyUI's `custom_nodes/` directory:
+
+```bash
+cd custom_nodes
+git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
+git clone https://github.com/city96/ComfyUI-GGUF
+git clone https://github.com/kijai/ComfyUI-WanVideoWrapper
+```
+
+### Models (for 8GB VRAM)
+
+| Model | Path in ComfyUI | Size |
+|-------|------|------|
+| Wan 2.1 VACE 1.3B GGUF Q8 | `models/unet/wan2.1_vace_1.3B_Q8_0.gguf` | ~1.3 GB |
+| UMT5-XXL FP8 | `models/clip/umt5_xxl_fp8_e4m3fn.safetensors` | ~5 GB |
+| Wan 2.1 VAE | `models/vae/wan_2.1_vae.safetensors` | ~200 MB |
+
+### Custom Workflow
+
+The template at `workflows/vace_template.json` is the default. To use your own:
+
+1. Create your workflow in ComfyUI's GUI
+2. Settings > Dev Mode > "Save (API Format)"
+3. Replace `workflows/vace_template.json`
+4. Give nodes descriptive `_meta.title` values for reliable injection
+
+The script resolves nodes by `_meta.title` first, then falls back to `class_type`.
+
+### Launch ComfyUI
+
+```bash
+python main.py --listen 0.0.0.0 --port 8188 --lowvram
 ```
 
 ---
@@ -454,60 +299,17 @@ python src/evaluate_iou.py \
 | GPU | RTX 3070 8GB | RTX 3090 24GB |
 | RAM | 16 GB | 32 GB |
 | CUDA Driver | 525+ | 570+ |
-| Docker | 24+ (with compose v2) | latest |
+| Docker | 24+ (compose v2) | latest |
 | OS | Windows 10/11, Linux | Windows 11 / Ubuntu 22.04 |
 
 ### 8GB VRAM Strategy
 
-- **SAM 2.1 Hiera-Small** instead of Large (~3GB vs ~12GB)
+- **SAM 2.1 Hiera-Small** instead of Large (~3 GB vs ~12 GB)
 - **DWPose balanced** mode instead of performance
 - **Sequential processing** with full VRAM cleanup between passes
 - **CPU offloading** for SAM2 frame embeddings and tracking state
-- **Wan 2.1 VACE 1.3B GGUF Q8** for generation (~3GB model)
+- **Wan 2.1 VACE 1.3B GGUF Q8** for generation (~3 GB model)
 - **ComfyUI `--lowvram`** flag for aggressive model offloading
-
----
-
-## ComfyUI Setup for Generation
-
-### Required Custom Nodes
-
-Install in ComfyUI's `custom_nodes/` directory:
-
-1. **VideoHelperSuite** - Video I/O
-   ```bash
-   cd custom_nodes && git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
-   ```
-
-2. **ComfyUI-GGUF** - GGUF model loading
-   ```bash
-   git clone https://github.com/city96/ComfyUI-GGUF
-   ```
-
-3. **ComfyUI-WanVideoWrapper** - Wan 2.1 VACE nodes
-   ```bash
-   git clone https://github.com/kijai/ComfyUI-WanVideoWrapper
-   ```
-
-### Required Models (for 8GB VRAM)
-
-| Model | Path in ComfyUI | Size |
-|-------|------|------|
-| Wan 2.1 VACE 1.3B GGUF Q8 | `models/unet/wan2.1_vace_1.3B_Q8_0.gguf` | ~1.3 GB |
-| UMT5-XXL FP8 | `models/clip/umt5_xxl_fp8_e4m3fn.safetensors` | ~5 GB |
-| Wan 2.1 VAE | `models/vae/wan_2.1_vae.safetensors` | ~200 MB |
-
-### Custom Workflow
-
-The template at `workflows/vace_template.json` is a starting point. To use your own:
-
-1. Create your workflow in ComfyUI's GUI
-2. Enable Dev Mode (Settings > Dev Mode)
-3. Click "Save (API Format)" to export
-4. Replace `workflows/vace_template.json`
-5. Ensure nodes have descriptive `_meta.title` values for reliable injection
-
-The script finds nodes by `_meta.title` first, then falls back to `class_type`.
 
 ---
 
@@ -515,64 +317,78 @@ The script finds nodes by `_meta.title` first, then falls back to `class_type`.
 
 ```
 skate-physics-preserver/
-+-- Dockerfile                    # Full GPU-enabled environment
-+-- docker-compose.yml            # One-command orchestration
-+-- .dockerignore
++-- Dockerfile
++-- docker-compose.yml
 +-- README.md
 +-- requirements.txt
-+-- AI_HANDOFF.md                 # Full architecture spec
 +-- configs/
-|   +-- sam2.1/
-|       +-- sam2.1_hiera_s.yaml   # SAM2 Hiera-Small config
-+-- checkpoints/                  # (host-mounted) model weights
-|   +-- sam2.1_hiera_small.pt
-+-- input/                        # (host-mounted) source videos
-+-- output/                       # (host-mounted) pipeline outputs
-+-- src/
-|   +-- __init__.py
-|   +-- app.py                    # Web UI: all 3 stages (extract/generate/validate)
-|   +-- auto_detect.py            # YOLO + SAM auto-detection module
-|   +-- extract_physics.py        # CLI: tracking orchestrator (headless)
-|   +-- generate_reskin.py        # CLI: ComfyUI headless client
-|   +-- evaluate_iou.py           # CLI: IoU validation
-|   +-- templates/
-|   |   +-- index.html            # Web UI single-page app
-|   +-- tracking/
-|       +-- __init__.py
-|       +-- skateboard_tracker.py # SAM 2.1 wrapper (multi-object)
-|       +-- skater_pose.py        # DWPose wrapper
+|   +-- sam2.1/sam2.1_hiera_s.yaml
++-- checkpoints/                    # model weights (host-mounted)
++-- input/                          # source videos (host-mounted)
++-- output/                         # pipeline outputs (host-mounted)
 +-- workflows/
-|   +-- vace_template.json        # ComfyUI workflow template
-+-- colab_demo.ipynb              # Jupyter demo notebook
+|   +-- vace_template.json          # ComfyUI workflow template
++-- src/
+    +-- app.py                      # Web UI (all 3 stages)
+    +-- auto_detect.py              # YOLO + SAM auto-detection
+    +-- extract_physics.py          # CLI: Stage 1 extraction
+    +-- generate_reskin.py          # CLI: Stage 2 generation
+    +-- evaluate_iou.py             # CLI: Stage 3 validation
+    +-- templates/
+    |   +-- index.html              # Single-page web app
+    +-- tracking/
+        +-- skateboard_tracker.py   # SAM 2.1 multi-object wrapper
+        +-- skater_pose.py          # DWPose wrapper
 ```
 
 ---
 
-## Troubleshooting (Native Install)
+## Troubleshooting
 
-### CUDA Out of Memory
-- Use `--pose-mode balanced` or `--pose-mode lightweight`
-- Reduce video resolution before processing
-- Set `SAM2_BUILD_CUDA=0` (uses PyTorch native ops, slightly less VRAM)
-- For ComfyUI: always use `--lowvram` flag
+### Docker
 
-### SAM2 Config Not Found
-The tracker uses the SAM2 package's built-in config by default. If you get config errors:
+**Can't connect to the web UI**
+> Open **http://localhost:5000**, not the container IP. Verify the container started (look for the banner in the terminal).
+
+**PowerShell line continuation errors**
+> PowerShell uses backtick (`` ` ``) not backslash. Or put the entire command on one line.
+
+**"no matching manifest for windows/amd64"**
+> Switch Docker Desktop to Linux containers: right-click tray icon > "Switch to Linux containers".
+
+**GPU not detected in container**
+> 1. `nvidia-smi` must work on the host
+> 2. Docker Desktop > Settings > Resources > WSL Integration > enable your distro
+> 3. Test: `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi`
+
+**"CUDA out of memory"**
+> Close other GPU apps. The container shares VRAM with the host.
+
+**"host.docker.internal" not resolving (Linux)**
+> Add `--add-host=host.docker.internal:host-gateway` or use `--network host`.
+
+<a id="nvidia-container-toolkit"></a>
+**NVIDIA Container Toolkit (Linux)**
+
 ```bash
-python -c "import sam2; print(sam2.__file__)"
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
 ```
-Check that `configs/sam2.1/sam2.1_hiera_s.yaml` exists in the package directory.
 
-### DWPose Model Download Fails
-rtmlib downloads ONNX models on first run. If behind a firewall:
-1. Download models manually from [rtmlib releases](https://github.com/Tau-J/rtmlib/releases)
-2. Place in `~/.cache/rtmlib/`
+### Native Install
 
-### ComfyUI Connection Refused
-```bash
-python src/generate_reskin.py --check
-python main.py --listen 0.0.0.0 --port 8188 --lowvram
-```
+**CUDA Out of Memory** -- use `--pose-mode balanced` or `--pose-mode lightweight`, reduce video resolution, or set `SAM2_BUILD_CUDA=0`.
+
+**SAM2 Config Not Found** -- verify with `python -c "import sam2; print(sam2.__file__)"` and check that `configs/sam2.1/sam2.1_hiera_s.yaml` exists in the package directory.
+
+**DWPose Model Download Fails** -- download manually from [rtmlib releases](https://github.com/Tau-J/rtmlib/releases) and place in `~/.cache/rtmlib/`.
+
+**ComfyUI Connection Refused** -- run `python src/generate_reskin.py --check` to test, then start ComfyUI with `python main.py --listen 0.0.0.0 --port 8188 --lowvram`.
 
 ---
 
