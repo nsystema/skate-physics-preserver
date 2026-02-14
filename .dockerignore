@@ -1,0 +1,34 @@
+# Ignore large / transient files to keep the build context small
+.git
+__pycache__
+*.pyc
+*.pyo
+
+# Data directories (mounted at runtime, not baked into image)
+checkpoints/
+input/
+output/
+
+# Large binary files
+*.mp4
+*.avi
+*.mov
+*.pt
+*.pth
+*.gguf
+*.safetensors
+*.onnx
+*.bin
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+.DS_Store
+
+# Virtual environments
+venv/
+.venv/
+env/

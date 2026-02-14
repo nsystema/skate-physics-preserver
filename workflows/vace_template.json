@@ -1,105 +1,189 @@
 {
-  "4": {
-    "class_type": "VAELoader",
+  "1": {
+    "class_type": "UNETLoader",
     "inputs": {
-      "vae_name": "wan_2.1_vae.safetensors"
+      "unet_name": "wan2.1_vace_1.3B_Q8_0.gguf",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "Load VACE Model"
     }
   },
-  "6": {
-    "class_type": "CLIPTextEncode",
-    "inputs": {
-      "clip": ["12", 0],
-      "text": "cyberpunk drone, samurai warrior, high quality"
-    }
-  },
-  "7": {
-    "class_type": "CLIPTextEncode",
-    "inputs": {
-      "clip": ["12", 0],
-      "text": "blur, distortion, artifacts, low quality"
-    }
-  },
-  "8": {
-    "class_type": "VAEDecode",
-    "inputs": {
-      "samples": ["3", 0],
-      "vae": ["4", 0]
-    }
-  },
-  "9": {
-    "class_type": "VHS_VideoCombine",
-    "inputs": {
-      "images": ["8", 0],
-      "frame_rate": 24,
-      "filename_prefix": "skate_reskin",
-      "format": "video/h264-mp4"
-    }
-  },
-  "10": {
-    "class_type": "VHS_LoadVideo",
-    "inputs": {
-      "video": "input.mp4",
-      "frame_load_cap": 50,
-      "force_rate": 24
-    }
-  },
-  "11": {
-    "class_type": "LoadImage",
-    "inputs": {
-      "image": "reference.png"
-    }
-  },
-  "12": {
+  "2": {
     "class_type": "CLIPLoader",
     "inputs": {
-      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "clip_name": "umt5_xxl_fp8_e4m3fn.safetensors",
       "type": "wan"
-    }
-  },
-  "13": {
-    "class_type": "UnetLoaderGGUF",
-    "inputs": {
-      "model_name": "Wan2.1-VACE-14B-Q4_K_S.gguf"
-    }
-  },
-  "14": {
-    "class_type": "WanVaceToVideo",
-    "inputs": {
-      "positive": ["6", 0],
-      "negative": ["7", 0],
-      "vae": ["4", 0],
-      "mask_video": ["15", 0],
-      "control_video": ["16", 0],
-      "reference_image": ["11", 0],
-      "width": 720,
-      "height": 480,
-      "frame_number": 50
-    }
-  },
-  "15": {
-    "class_type": "LoadImagesFromDirectory",
-    "inputs": {
-      "directory": "mask_skateboard"
-    }
-  },
-  "16": {
-    "class_type": "LoadImagesFromDirectory",
-    "inputs": {
-      "directory": "pose_skater"
+    },
+    "_meta": {
+      "title": "Load CLIP"
     }
   },
   "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "cyberpunk samurai riding a neon hoverboard, cinematic lighting",
+      "clip": ["2", 0]
+    },
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "blurry, distorted, low quality, deformed, watermark",
+      "clip": ["2", 0]
+    },
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "6": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "input.mp4",
+      "force_rate": 24,
+      "force_size": "Custom Height",
+      "custom_width": 832,
+      "custom_height": 480,
+      "frame_load_cap": 49,
+      "skip_first_frames": 0,
+      "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Source Video"
+    }
+  },
+  "7": {
+    "class_type": "VHS_LoadImages",
+    "inputs": {
+      "directory": "mask_skateboard",
+      "image_load_cap": 49,
+      "skip_first_images": 0,
+      "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Mask Sequence"
+    }
+  },
+  "8": {
+    "class_type": "VHS_LoadImages",
+    "inputs": {
+      "directory": "pose_skater",
+      "image_load_cap": 49,
+      "skip_first_images": 0,
+      "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Pose Sequence"
+    }
+  },
+  "9": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "reference.png"
+    },
+    "_meta": {
+      "title": "Reference Image"
+    }
+  },
+  "10": {
+    "class_type": "ImageToMask",
+    "inputs": {
+      "image": ["7", 0],
+      "channel": "red"
+    },
+    "_meta": {
+      "title": "Mask Converter"
+    }
+  },
+  "11": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "destination": ["6", 0],
+      "source": ["14", 0],
+      "x": 0,
+      "y": 0,
+      "resize_source": true,
+      "mask": ["10", 0]
+    },
+    "_meta": {
+      "title": "White-Out Reference"
+    }
+  },
+  "12": {
     "class_type": "KSampler",
     "inputs": {
-      "model": ["13", 0],
-      "positive": ["14", 0],
-      "negative": ["14", 1],
-      "latent_image": ["14", 2],
+      "model": ["1", 0],
+      "positive": ["4", 0],
+      "negative": ["5", 0],
+      "latent_image": ["13", 0],
       "seed": 42,
-      "steps": 20,
-      "cfg": 4,
+      "steps": 25,
+      "cfg": 6.0,
       "sampler_name": "uni_pc",
-      "scheduler": "normal"
+      "scheduler": "normal",
+      "denoise": 0.85
+    },
+    "_meta": {
+      "title": "VACE Sampler"
+    }
+  },
+  "13": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": ["11", 0],
+      "vae": ["3", 0]
+    },
+    "_meta": {
+      "title": "Encode Latent"
+    }
+  },
+  "14": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 832,
+      "height": 480,
+      "batch_size": 49,
+      "color": 16777215
+    },
+    "_meta": {
+      "title": "White Canvas"
+    }
+  },
+  "15": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["12", 0],
+      "vae": ["3", 0]
+    },
+    "_meta": {
+      "title": "Decode Output"
+    }
+  },
+  "16": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["15", 0],
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "skate_reskin",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    },
+    "_meta": {
+      "title": "Output Video"
     }
   }
 }

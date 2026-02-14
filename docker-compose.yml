@@ -1,0 +1,55 @@
+# =============================================================================
+# docker compose build        -> builds the image (~10 min first time)
+# docker compose run pipeline <cmd>  -> run any command inside the container
+#
+# Examples:
+#   docker compose run --rm pipeline src/extract_physics.py --check
+#   docker compose run --rm pipeline src/extract_physics.py \
+#       --video /data/input/skate.mp4 --output /data/output --bbox "120,340,280,410"
+#   docker compose run --rm pipeline src/evaluate_iou.py \
+#       --metadata /data/output/tracking_metadata.json \
+#       --generated /data/output/generated/output.mp4 \
+#       --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+# =============================================================================
+
+services:
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: skate-physics:latest
+
+    # ---- GPU access ----
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    # ---- Persistent data volumes ----
+    # Put your files on the HOST in these folders:
+    #   ./checkpoints/sam2.1_hiera_small.pt
+    #   ./input/skate.mp4
+    # Outputs appear in ./output/
+    volumes:
+      - ./checkpoints:/data/checkpoints
+      - ./input:/data/input
+      - ./output:/data/output
+      - ./workflows:/app/workflows   # live-edit workflow templates
+
+    # ---- Environment ----
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Use host's ComfyUI via host.docker.internal:8188
+      - COMFYUI_SERVER=host.docker.internal:8188
+
+    # ---- Defaults ----
+    working_dir: /app
+    entrypoint: ["python"]
+
+    # Override SAM2 checkpoint path inside the container
+    # (matches the /data/checkpoints mount)
+    command: ["src/extract_physics.py", "--check"]

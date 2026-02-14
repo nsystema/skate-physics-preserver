@@ -1,6 +1,11 @@
-# SAM 2.1 Hiera-Small config (Colab T4 optimized)
 # @package _global_
-# Source: https://github.com/facebookresearch/sam2/blob/main/sam2/configs/sam2.1/sam2.1_hiera_s.yaml
+
+# =============================================================================
+# SAM 2.1 Hiera-Small Configuration
+# Optimized for RTX 3070 8GB VRAM
+# Checkpoint: sam2.1_hiera_small.pt
+# VRAM Usage: ~2-3 GB (model) + ~1-2 GB (frame embeddings with CPU offload)
+# =============================================================================
 
 model:
   _target_: sam2.modeling.sam2_base.SAM2Base
@@ -22,7 +27,7 @@ model:
         normalize: true
         scale: null
         temperature: 10000
-        d_model: 256
+      d_model: 256
       backbone_channel_list: [768, 384, 192, 96]
       fpn_top_down_levels: [2, 3]
       fpn_interp_model: nearest
@@ -38,27 +43,25 @@ model:
       dropout: 0.1
       pos_enc_at_attn: false
       self_attention:
-        _target_: sam2.modeling.sam.transformer.RoPEAttention
+        _target_: sam2.modeling.sam2_utils.RoPEAttention
         rope_theta: 10000.0
-        feat_sizes: [64, 64]
+        feat_sizes: [32, 32]
         embedding_dim: 256
         num_heads: 1
         downsample_rate: 1
         dropout: 0.1
-        d_model: 256
-        pos_enc_at_cross_attn_keys: true
-        pos_enc_at_cross_attn_queries: false
+      d_model: 256
+      pos_enc_at_cross_attn_keys: true
+      pos_enc_at_cross_attn_queries: false
       cross_attention:
-        _target_: sam2.modeling.sam.transformer.RoPEAttention
+        _target_: sam2.modeling.sam2_utils.RoPEAttention
         rope_theta: 10000.0
-        feat_sizes: [64, 64]
-        rope_k_repeat: True
+        feat_sizes: [32, 32]
         embedding_dim: 256
         num_heads: 1
         downsample_rate: 1
         dropout: 0.1
-        kv_in_dim: 64
-        num_layers: 4
+    num_layers: 4
 
   memory_encoder:
     _target_: sam2.modeling.memory_encoder.MemoryEncoder
@@ -82,23 +85,21 @@ model:
         kernel_size: 7
         padding: 3
         layer_scale_init_value: 1e-6
-        use_dwconv: True
-        num_layers: 2
+        use_dwconv: true
+      num_layers: 2
 
   num_maskmem: 7
   image_size: 1024
+  backbone_stride: 16
   sigmoid_scale_for_mem_enc: 20.0
   sigmoid_bias_for_mem_enc: -10.0
   use_mask_input_as_output_without_sam: true
   directly_add_no_mem_embed: true
-  no_obj_embed_spatial: true
   use_high_res_features_in_sam: true
   multimask_output_in_sam: true
-  iou_prediction_use_sigmoid: True
+  iou_prediction_use_sigmoid: true
   use_obj_ptrs_in_encoder: true
   add_tpos_enc_to_obj_ptrs: true
-  proj_tpos_enc_in_obj_ptrs: true
-  use_signed_tpos_enc_to_obj_ptrs: true
   only_obj_ptrs_in_the_past_for_eval: true
   pred_obj_scores: true
   pred_obj_scores_mlp: true
@@ -108,4 +109,9 @@ model:
   multimask_min_pt_num: 0
   multimask_max_pt_num: 1
   use_mlp_for_obj_ptr_proj: true
-  compile_image_encoder: False
+  # CRITICAL: Disable compile on 3070 to avoid Triton issues on Windows
+  compile_image_encoder: false
+  sam_mask_decoder_extra_args:
+    dynamic_multimask_via_stability: true
+    dynamic_multimask_stability_delta: 0.05
+    dynamic_multimask_stability_thresh: 0.98

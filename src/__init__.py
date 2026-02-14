@@ -1,1 +1,1 @@
-"""Skate Physics Preserver - V2V pipeline for human-object relational mapping."""
+# Skate Physics Preserver - Core Package
