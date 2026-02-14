@@ -61,8 +61,15 @@ def download_youtube_video(url: str, output_dir: str) -> str:
     os.makedirs(output_dir, exist_ok=True)
     outtmpl = os.path.join(output_dir, "%(title)s.%(ext)s")
 
+    # Prefer H.264 (avc1) > VP9 > anything, but NEVER AV1 — the container's
+    # FFmpeg/OpenCV build cannot software-decode AV1 reliably.
     ydl_opts = {
-        "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
+        "format": (
+            "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/"
+            "bestvideo[height<=1080][vcodec^=vp9]+bestaudio/"
+            "bestvideo[height<=1080][vcodec!^=av01]+bestaudio/"
+            "best[height<=1080]/best"
+        ),
         "outtmpl": outtmpl,
         "merge_output_format": "mp4",
         "quiet": False,

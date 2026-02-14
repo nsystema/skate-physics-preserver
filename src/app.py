@@ -164,7 +164,7 @@ def load_video():
         ok, frame = cap.read()
         cap.release()
         if not ok:
-            return jsonify({"error": "Cannot read first frame."}), 500
+            return jsonify({"error": "Cannot read first frame. The video codec may not be supported (e.g. AV1). Try a different video or re-download in H.264 format."}), 500
 
         h, w = frame.shape[:2]
         state["video_path"] = video_path
