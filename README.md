@@ -10,7 +10,7 @@ A headless Video-to-Video (V2V) pipeline that preserves spatial integrity during
 
 ## Colab Setup
 
-1. **Open the notebook:** Upload `colab_notebook.ipynb` to [Google Colab](https://colab.research.google.com)
+1. **Open the notebook:** Upload `colab_demo.ipynb` to [Google Colab](https://colab.research.google.com)
 2. **Enable GPU:** Runtime → Change runtime type → T4 GPU
 3. **Upload project:** Upload the full `skate-physics-preserver` folder to `/content/` (or clone from your repo)
 4. **Run cells** in order: Setup → Install → Models → Tracking → Generation → Validation
@@ -54,7 +54,7 @@ skate-physics-preserver/
 ├── AI_HANDOFF.md           # Full spec
 ├── README.md
 ├── requirements.txt
-├── colab_notebook.ipynb    # Single Colab execution
+├── colab_demo.ipynb        # End-to-end Colab demo
 ├── src/
 │   ├── tracking/           # SAM 2.1 + DWPose
 │   ├── extract_physics.py

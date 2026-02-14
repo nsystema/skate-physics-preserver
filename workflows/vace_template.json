@@ -68,7 +68,8 @@
       "positive": ["6", 0],
       "negative": ["7", 0],
       "vae": ["4", 0],
-      "control_video": ["15", 0],
+      "mask_video": ["15", 0],
+      "control_video": ["16", 0],
       "reference_image": ["11", 0],
       "width": 720,
       "height": 480,
@@ -76,6 +77,12 @@
     }
   },
   "15": {
+    "class_type": "LoadImagesFromDirectory",
+    "inputs": {
+      "directory": "mask_skateboard"
+    }
+  },
+  "16": {
     "class_type": "LoadImagesFromDirectory",
     "inputs": {
       "directory": "pose_skater"
