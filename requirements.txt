@@ -5,8 +5,8 @@
 torch>=2.0.0
 torchvision>=0.15.0
 
-# SAM 2.1
-sam2 @ git+https://github.com/facebookresearch/sam2.git@main
+# SAM 2.1 — installed separately via git in the notebook
+# (the PyPI metadata uses "sam-2", so we skip it here to avoid conflicts)
 
 # DWPose / Pose
 rtmlib>=0.0.15
