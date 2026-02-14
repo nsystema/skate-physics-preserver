@@ -1,0 +1,34 @@
+# Model checkpoints & large binaries (downloaded at runtime)
+checkpoints/
+*.pt
+*.pth
+*.gguf
+*.safetensors
+*.onnx
+*.bin
+
+# Data directories (mounted at runtime)
+input/
+output/
+
+# Video / media files
+*.mp4
+*.avi
+*.mov
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+env/
+
+# IDE / OS
+.vscode/
+.cursor/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+.DS_Store

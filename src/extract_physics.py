@@ -19,11 +19,77 @@ Headless mode:              Pass --bbox "x1,y1,x2,y2" on CLI.
 import argparse
 import json
 import os
+import re
 import sys
 import gc
 
 import cv2
 import torch
+
+
+# ---------------------------------------------------------------------------
+# YouTube / URL helpers
+# ---------------------------------------------------------------------------
+
+_YOUTUBE_RE = re.compile(
+    r"(https?://)?(www\.)?"
+    r"(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)"
+    r"[A-Za-z0-9_\-]+"
+)
+
+
+def is_youtube_url(path: str) -> bool:
+    """Return True if *path* looks like a YouTube URL."""
+    return bool(_YOUTUBE_RE.match(path))
+
+
+def download_youtube_video(url: str, output_dir: str) -> str:
+    """
+    Download a YouTube video using yt-dlp and return the local file path.
+
+    Downloads at best quality up to 1080p (keeping file size reasonable for an
+    8 GB VRAM card).  The file is saved into *output_dir* with yt-dlp's default
+    title-based filename.
+    """
+    try:
+        import yt_dlp
+    except ImportError:
+        print("[ERROR] yt-dlp is required for YouTube URL support.")
+        print("        Install it with:  pip install yt-dlp")
+        sys.exit(1)
+
+    os.makedirs(output_dir, exist_ok=True)
+    outtmpl = os.path.join(output_dir, "%(title)s.%(ext)s")
+
+    ydl_opts = {
+        "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
+        "outtmpl": outtmpl,
+        "merge_output_format": "mp4",
+        "quiet": False,
+        "no_warnings": False,
+    }
+
+    print(f"\n[INFO] Downloading YouTube video: {url}")
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        filename = ydl.prepare_filename(info)
+        # yt-dlp may change the extension after merging; ensure .mp4
+        base, _ = os.path.splitext(filename)
+        final_path = base + ".mp4"
+
+    if not os.path.isfile(final_path):
+        # Fallback: look for any mp4 file yt-dlp just wrote
+        for f in os.listdir(output_dir):
+            if f.endswith(".mp4"):
+                final_path = os.path.join(output_dir, f)
+                break
+
+    if not os.path.isfile(final_path):
+        print("[ERROR] yt-dlp finished but no .mp4 file was found.")
+        sys.exit(1)
+
+    print(f"[INFO] Downloaded video saved to: {final_path}")
+    return final_path
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +171,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Extract tracking data (masks + poses) for ComfyUI V2V pipeline"
     )
-    parser.add_argument("--video", "-i", required=True, help="Input video path")
+    parser.add_argument("--video", "-i", required=True,
+                        help="Input video path or YouTube URL")
     parser.add_argument("--output", "-o", required=True, help="Output folder base")
     parser.add_argument(
         "--bbox", type=str, default=None,
@@ -142,10 +209,18 @@ def main():
         return run_dependency_check(args.device)
 
     # ------------------------------------------------------------------
+    # Resolve YouTube URLs → local file
+    # ------------------------------------------------------------------
+    video_path = args.video
+    if is_youtube_url(video_path):
+        download_dir = os.path.join(args.output, "downloads")
+        video_path = download_youtube_video(video_path, download_dir)
+
+    # ------------------------------------------------------------------
     # Validate inputs
     # ------------------------------------------------------------------
-    if not os.path.isfile(args.video):
-        print(f"[ERROR] Video not found: {args.video}")
+    if not os.path.isfile(video_path):
+        print(f"[ERROR] Video not found: {video_path}")
         sys.exit(1)
 
     # ------------------------------------------------------------------
@@ -170,7 +245,7 @@ def main():
         backend="onnxruntime",
         mode=args.pose_mode,
     )
-    n_pose_frames = pose_extractor.process_video(args.video, poses_dir, json_dir)
+    n_pose_frames = pose_extractor.process_video(video_path, poses_dir, json_dir)
     pose_extractor.cleanup()
 
     # Force VRAM release before SAM2
@@ -185,7 +260,7 @@ def main():
     if args.bbox:
         user_bbox = parse_bbox_string(args.bbox)
     else:
-        user_bbox = get_user_box_interactive(args.video)
+        user_bbox = get_user_box_interactive(video_path)
 
     # ------------------------------------------------------------------
     # PASS 2: SAM 2.1 Mask Propagation
@@ -201,7 +276,7 @@ def main():
         config_path=args.sam_config,
         device=args.device,
     )
-    tracker.init_video(args.video)
+    tracker.init_video(video_path)
     tracker.add_initial_prompt(frame_idx=0, bbox=user_bbox)
     n_mask_frames = tracker.propagate_and_save(masks_dir)
     tracker.cleanup()
@@ -210,7 +285,8 @@ def main():
     # Save metadata (bbox + counts) for downstream scripts
     # ------------------------------------------------------------------
     metadata = {
-        "video": os.path.abspath(args.video),
+        "source": args.video,          # original arg (may be URL)
+        "video": os.path.abspath(video_path),
         "bbox": user_bbox,
         "mask_frames": n_mask_frames,
         "pose_frames": n_pose_frames,
@@ -314,6 +390,13 @@ def run_dependency_check(device):
     except ImportError:
         print("  [FAIL] numpy not installed")
         ok = False
+
+    # yt-dlp (optional but needed for YouTube URL input)
+    try:
+        _ytdlp = importlib.import_module("yt_dlp")
+        print(f"  [OK] yt-dlp {_ytdlp.version.__version__}")
+    except ImportError:
+        print("  [WARN] yt-dlp not installed (needed for YouTube URL support)")
 
     print("=" * 60)
     if ok:

@@ -41,8 +41,8 @@ ENV SAM2_BUILD_CUDA=0
 RUN pip install --no-cache-dir "git+https://github.com/facebookresearch/sam2.git@main"
 
 # Layer 3: DWPose + ONNX Runtime GPU
-RUN pip install --no-cache-dir rtmlib==0.2.0 && \
-    pip uninstall -y onnxruntime 2>/dev/null; \
+RUN pip install --no-cache-dir rtmlib==0.0.15 && \
+    (pip uninstall -y onnxruntime 2>/dev/null || true) && \
     pip install --no-cache-dir onnxruntime-gpu==1.20.1
 
 # Layer 4: Everything else
@@ -55,7 +55,8 @@ RUN pip install --no-cache-dir \
     hydra-core==1.3.2 \
     "tqdm>=4.67.0" \
     "matplotlib>=3.9.0" \
-    pycocotools==2.0.8
+    pycocotools==2.0.8 \
+    "yt-dlp>=2024.12.0"
 
 # ---------- Project source ----------
 COPY configs/ /app/configs/

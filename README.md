@@ -130,17 +130,19 @@ Expected output:
 
 ### Step 4: Run the Pipeline
 
-Place your source video in `./input/`:
+Place your source video in `./input/`, **or pass a YouTube URL directly**:
 
 ```
 skate-physics-preserver/
   input/
-    skate_clip.mp4       <-- your video here
+    skate_clip.mp4       <-- your video here (optional if using a URL)
   checkpoints/
     sam2.1_hiera_small.pt
 ```
 
 **Stage 1 -- Extract tracking data:**
+
+*From a local file:*
 
 ```bash
 docker compose run --rm pipeline src/extract_physics.py \
@@ -149,6 +151,18 @@ docker compose run --rm pipeline src/extract_physics.py \
   --bbox "120,340,280,410" \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
+
+*From a YouTube URL:*
+
+```bash
+docker compose run --rm pipeline src/extract_physics.py \
+  --video "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --output /data/output \
+  --bbox "120,340,280,410" \
+  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+```
+
+> The video is auto-downloaded to `output/downloads/` via `yt-dlp` (max 1080p, mp4). Short URLs like `https://youtu.be/VIDEO_ID` and `/shorts/` links also work.
 
 > **How to get the bbox:** Open frame 0 in any image viewer and note the pixel coordinates of the skateboard's top-left (x1,y1) and bottom-right (x2,y2) corners. Format: `"x1,y1,x2,y2"`. Tip: use `ffmpeg -i input.mp4 -frames:v 1 frame0.png` to extract the first frame.
 
@@ -264,7 +278,7 @@ pip uninstall -y onnxruntime
 pip install onnxruntime-gpu==1.20.1
 
 # Install remaining dependencies
-pip install opencv-python==4.11.0.86 "av>=12.0.0" websocket-client requests tqdm matplotlib "numpy<2.0" hydra-core==1.3.2
+pip install opencv-python==4.11.0.86 "av>=12.0.0" websocket-client requests tqdm matplotlib "numpy<2.0" hydra-core==1.3.2 yt-dlp
 ```
 
 > **Note:** Set `SAM2_BUILD_CUDA=0` on Windows if you don't have `nvcc` in PATH.
@@ -285,11 +299,14 @@ python src/extract_physics.py --check
 ### 4. Run the Pipeline
 
 ```bash
-# Extract tracking (interactive bbox selection)
+# Extract tracking from a local file (interactive bbox selection)
 python src/extract_physics.py --video input.mp4 --output output/
 
-# Extract tracking (headless, provide bbox)
+# Extract tracking from a local file (headless, provide bbox)
 python src/extract_physics.py --video input.mp4 --output output/ --bbox "120,340,280,410"
+
+# Extract tracking from a YouTube URL (auto-downloads to output/downloads/)
+python src/extract_physics.py --video "https://www.youtube.com/watch?v=VIDEO_ID" --output output/ --bbox "120,340,280,410"
 
 # Generate reskin (ComfyUI must be running)
 python src/generate_reskin.py \
