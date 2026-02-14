@@ -45,18 +45,28 @@ RUN pip install --no-cache-dir rtmlib==0.0.15 && \
     (pip uninstall -y onnxruntime 2>/dev/null || true) && \
     pip install --no-cache-dir onnxruntime-gpu==1.20.1
 
-# Layer 4: Everything else
+# Layer 4: Everything else (install BEFORE ultralytics to pin versions)
 RUN pip install --no-cache-dir \
     opencv-python-headless==4.11.0.86 \
     "av>=12.0.0" \
     "websocket-client>=1.7.0" \
     "requests>=2.31.0" \
-    "numpy>=1.26.4,<2.0" \
+    "numpy>=1.26.4" \
     hydra-core==1.3.2 \
     "tqdm>=4.67.0" \
     "matplotlib>=3.9.0" \
     pycocotools==2.0.8 \
     "yt-dlp>=2024.12.0"
+
+# Remove system-installed blinker 1.4 (distutils) that pip cannot upgrade;
+# Flask requires blinker>=1.9
+RUN rm -rf /usr/lib/python3/dist-packages/blinker \
+           /usr/lib/python3/dist-packages/blinker-*
+
+# Layer 5: Auto-detection + web UI
+RUN pip install --no-cache-dir \
+    "ultralytics>=8.3.0" \
+    "flask>=3.0.0"
 
 # ---------- Project source ----------
 COPY configs/ /app/configs/
@@ -68,13 +78,16 @@ RUN mkdir -p /data/checkpoints /data/input /data/output
 
 # Smoke-test: verify core imports parse without error
 RUN python -c "\
-import torch, cv2, numpy, requests, websocket; \
+import torch, cv2, numpy, requests, websocket, flask; \
 from sam2.build_sam import build_sam2_video_predictor; \
+from sam2.sam2_image_predictor import SAM2ImagePredictor; \
 from rtmlib import Wholebody; \
+from ultralytics import YOLO; \
 print('=== All imports OK ==='); \
 print(f'  torch {torch.__version__}  CUDA {torch.version.cuda}'); \
 print(f'  numpy {numpy.__version__}'); \
 print(f'  cv2   {cv2.__version__}'); \
+print(f'  flask {flask.__version__}'); \
 "
 
 # Default entrypoint: drop into a shell or run a command
