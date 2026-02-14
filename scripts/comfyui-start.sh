@@ -30,6 +30,16 @@ MODEL_URLS[vae]="https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/res
 
 
 # ---- Download helper ----
+get_remote_size() {
+    # Return the Content-Length of a URL (follows redirects)
+    local url="$1"
+    if command -v wget &>/dev/null; then
+        wget --spider --server-response "$url" 2>&1 | awk '/Content-Length:/{size=$2} END{print size+0}'
+    else
+        curl -sIL "$url" 2>/dev/null | awk '/^[Cc]ontent-[Ll]ength:/{size=$2} END{gsub(/\r/,"",size); print size+0}'
+    fi
+}
+
 download_model() {
     local name="$1"
     local dest="${MODELS[$name]}"
@@ -38,10 +48,19 @@ download_model() {
     dir=$(dirname "$dest")
 
     if [ -f "$dest" ]; then
-        local size_mb
-        size_mb=$(du -m "$dest" 2>/dev/null | cut -f1)
-        echo "[models] $name: already exists ($size_mb MB) — skipping"
-        return 0
+        # Validate: compare local size against remote Content-Length
+        local local_size remote_size
+        local_size=$(stat -c %s "$dest" 2>/dev/null || echo 0)
+        remote_size=$(get_remote_size "$url")
+        if [ "$remote_size" -gt 0 ] 2>/dev/null && [ "$local_size" -ne "$remote_size" ]; then
+            echo "[models] $name: SIZE MISMATCH (local ${local_size} vs remote ${remote_size}) — re-downloading"
+            rm -f "$dest"
+        else
+            local size_mb
+            size_mb=$(du -m "$dest" 2>/dev/null | cut -f1)
+            echo "[models] $name: already exists ($size_mb MB) — skipping"
+            return 0
+        fi
     fi
 
     mkdir -p "$dir"
@@ -52,21 +71,25 @@ download_model() {
     echo "  Dest: $dest"
     echo "============================================================"
 
-    # Use wget with resume support; fall back to curl
+    # Download to a temp file first, then rename on success
+    local tmp="${dest}.part"
+    local rc=0
     if command -v wget &>/dev/null; then
-        wget --continue --progress=bar:force:noscroll -O "$dest" "$url"
+        wget --continue --progress=bar:force:noscroll -O "$tmp" "$url" || rc=$?
     else
-        curl -L --retry 3 -C - -o "$dest" "$url"
+        curl -L --retry 3 -C - -o "$tmp" "$url" || rc=$?
     fi
 
-    if [ -f "$dest" ]; then
-        local size_mb
-        size_mb=$(du -m "$dest" 2>/dev/null | cut -f1)
-        echo "[models] $name: downloaded ($size_mb MB)"
-    else
-        echo "[models] ERROR: $name download failed!"
+    if [ $rc -ne 0 ] || [ ! -f "$tmp" ]; then
+        echo "[models] ERROR: $name download failed (exit code $rc)!"
+        rm -f "$tmp"
         return 1
     fi
+
+    mv "$tmp" "$dest"
+    local size_mb
+    size_mb=$(du -m "$dest" 2>/dev/null | cut -f1)
+    echo "[models] $name: downloaded ($size_mb MB)"
 }
 
 

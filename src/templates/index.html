@@ -2276,6 +2276,12 @@ $('#btn-new').addEventListener('click', () => {
   try {
     const r = await fetch('/api/state');
     const j = await r.json();
+
+    // Sync ComfyUI server address from backend (may come from env var / CLI)
+    if (j.comfyui_server) {
+      $('#comfyui-server').value = j.comfyui_server;
+    }
+
     if (j.has_video && j.status === 'idle') {
       uploadSt.innerHTML = '<span class="spinner"></span> Reading pre-loaded video ...';
       const fd = new FormData();

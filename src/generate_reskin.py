@@ -108,7 +108,7 @@ def upload_asset(server_address, file_path, subfolder="", asset_type="input"):
     filename = os.path.basename(file_path)
 
     with open(file_path, "rb") as f:
-        files = {"image": (filename, f, "multipart/form-data")}
+        files = {"image": (filename, f)}
         data = {"type": asset_type, "overwrite": "true"}
         if subfolder:
             data["subfolder"] = subfolder

@@ -142,6 +142,7 @@ def api_state():
         "fps": state.get("fps", 0),
         "frame_count": state.get("frame_count", 0),
         "duration": state.get("duration", 0),
+        "comfyui_server": state.get("comfyui_server", "127.0.0.1:8188"),
     })
 
 

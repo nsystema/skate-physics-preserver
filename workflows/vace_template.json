@@ -1,12 +1,11 @@
 {
   "1": {
-    "class_type": "UNETLoader",
+    "class_type": "UnetLoaderGGUF",
     "inputs": {
-      "unet_name": "wan2.1_vace_1.3B_Q8_0.gguf",
-      "weight_dtype": "default"
+      "unet_name": "wan2.1_vace_1.3B_Q8_0.gguf"
     },
     "_meta": {
-      "title": "Load VACE Model"
+      "title": "Load VACE Model (GGUF)"
     }
   },
   "2": {
