@@ -153,13 +153,21 @@ skate-physics-preserver/
 
 **Stage 1 -- Extract tracking data (Web UI — recommended):**
 
+Linux / macOS / Git Bash:
+
 ```bash
 docker compose run --rm -p 5000:5000 pipeline src/app.py \
   --output /data/output \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 
-Open **http://localhost:5000** in your browser. The web UI lets you:
+PowerShell:
+
+```powershell
+docker compose run --rm -p 5000:5000 pipeline src/app.py --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+```
+
+Open **http://localhost:5000** in your browser (NOT the Docker container IP). The web UI lets you:
 
 1. **Upload** a video file or paste a YouTube URL
 2. **Auto-detect** — YOLO finds the skater + skateboard, SAM 2.1 segments them on frame 0
@@ -169,6 +177,8 @@ Open **http://localhost:5000** in your browser. The web UI lets you:
 
 You can also pre-load a video:
 
+Linux / macOS / Git Bash:
+
 ```bash
 docker compose run --rm -p 5000:5000 pipeline src/app.py \
   --video /data/input/skate_clip.mp4 \
@@ -176,9 +186,17 @@ docker compose run --rm -p 5000:5000 pipeline src/app.py \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 
+PowerShell:
+
+```powershell
+docker compose run --rm -p 5000:5000 pipeline src/app.py --video /data/input/skate_clip.mp4 --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+```
+
 > YouTube URLs work too: `--video "https://www.youtube.com/watch?v=VIDEO_ID"`
 
 **Stage 1 -- Extract tracking data (headless CLI — for scripting):**
+
+Linux / macOS / Git Bash:
 
 ```bash
 docker compose run --rm pipeline src/extract_physics.py \
@@ -186,6 +204,12 @@ docker compose run --rm pipeline src/extract_physics.py \
   --output /data/output \
   --bbox "120,340,280,410" \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+```
+
+PowerShell:
+
+```powershell
+docker compose run --rm pipeline src/extract_physics.py --video /data/input/skate_clip.mp4 --output /data/output --bbox "120,340,280,410" --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 
 > In CLI mode, `--bbox` is optional — if omitted, the script attempts contour-based auto-detection. The web UI uses YOLO for more reliable detection.
@@ -212,6 +236,8 @@ python main.py --listen 0.0.0.0 --port 8188 --lowvram
 
 Then from the project directory:
 
+Linux / macOS / Git Bash:
+
 ```bash
 docker compose run --rm pipeline src/generate_reskin.py \
   --source-video /data/input/skate_clip.mp4 \
@@ -223,9 +249,17 @@ docker compose run --rm pipeline src/generate_reskin.py \
   --server host.docker.internal:8188
 ```
 
+PowerShell:
+
+```powershell
+docker compose run --rm pipeline src/generate_reskin.py --source-video /data/input/skate_clip.mp4 --masks-dir /data/output/mask_skateboard --poses-dir /data/output/pose_skater --positive-prompt "cyberpunk samurai riding a neon hoverboard, cinematic" --negative-prompt "blurry, distorted, deformed" --output-dir /data/output/generated --server host.docker.internal:8188
+```
+
 > On Linux, replace `host.docker.internal` with your host's LAN IP (e.g., `192.168.1.100`), or add `--network host` to the docker run command.
 
 **Stage 3 -- Validate IoU:**
+
+Linux / macOS / Git Bash:
 
 ```bash
 docker compose run --rm pipeline src/evaluate_iou.py \
@@ -234,7 +268,15 @@ docker compose run --rm pipeline src/evaluate_iou.py \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 
+PowerShell:
+
+```powershell
+docker compose run --rm pipeline src/evaluate_iou.py --metadata /data/output/tracking_metadata.json --generated /data/output/generated/output.mp4 --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+```
+
 ### Quick-Reference Commands
+
+Linux / macOS / Git Bash:
 
 ```bash
 # Build image
@@ -257,7 +299,35 @@ docker compose run --rm --entrypoint bash pipeline
 docker compose run --rm --entrypoint nvidia-smi pipeline
 ```
 
+PowerShell:
+
+```powershell
+# Build image
+docker compose build
+
+# Launch web validation UI (recommended)
+docker compose run --rm -p 5000:5000 pipeline src/app.py --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+
+# Dependency check
+docker compose run --rm pipeline src/extract_physics.py --check
+
+# Check if ComfyUI is reachable
+docker compose run --rm pipeline src/generate_reskin.py --check --server host.docker.internal:8188
+
+# Interactive shell inside container (for debugging)
+docker compose run --rm --entrypoint bash pipeline
+
+# Run with verbose GPU info
+docker compose run --rm --entrypoint nvidia-smi pipeline
+```
+
 ### Docker Troubleshooting
+
+**"took too long to respond" / can't connect to the web UI**
+> Always open **http://localhost:5000** in your browser. Do NOT use the Docker container's internal IP (e.g., `172.18.0.x`) — it is not accessible from the Windows host. If `localhost:5000` doesn't work, verify the container started successfully (you should see the "Web Validation UI" banner in the terminal).
+
+**PowerShell multi-line command errors (`--` operators, `\` not recognized)**
+> PowerShell does not use `\` for line continuation. Either put the entire command on one line, or use backtick (`` ` ``) at the end of each line. See command examples above.
 
 **"no matching manifest for windows/amd64"**
 > Docker Desktop is set to Windows containers. Switch to Linux containers: right-click Docker tray icon > "Switch to Linux containers".

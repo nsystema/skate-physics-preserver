@@ -2,17 +2,17 @@
 # docker compose build        -> builds the image (~10 min first time)
 # docker compose run pipeline <cmd>  -> run any command inside the container
 #
-# Examples:
+# Examples (PowerShell — put everything on one line):
 #   # Web validation UI (recommended):
-#   docker compose run --rm -p 5000:5000 pipeline src/app.py \
-#       --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+#   docker compose run --rm -p 5000:5000 pipeline src/app.py --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 #
 #   # Headless CLI:
-#   docker compose run --rm pipeline src/extract_physics.py \
-#       --video /data/input/skate.mp4 --output /data/output --bbox "120,340,280,410"
+#   docker compose run --rm pipeline src/extract_physics.py --video /data/input/skate.mp4 --output /data/output --bbox "120,340,280,410"
 #
 #   # Dependency check:
 #   docker compose run --rm pipeline src/extract_physics.py --check
+#
+# Note: In Bash/Linux, you can split with \ at end of line. PowerShell uses `
 # =============================================================================
 
 services:
