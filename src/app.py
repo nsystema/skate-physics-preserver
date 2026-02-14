@@ -21,6 +21,8 @@ import io
 import json
 import os
 import re
+import signal
+import subprocess
 import sys
 import threading
 import time
@@ -83,7 +85,10 @@ state = {
     # Pipeline sub-steps for detailed progress
     "sub_steps": [],           # list[dict] with label, status, detail
     # Stage 2 — Generation
-    "comfyui_server": "127.0.0.1:8188",
+    "comfyui_server": os.environ.get("COMFYUI_SERVER", "127.0.0.1:8188"),
+    "comfyui_path": os.environ.get("COMFYUI_PATH", ""),  # path to ComfyUI install dir
+    "comfyui_process": None,   # subprocess.Popen if we auto-launched ComfyUI
+    "comfyui_autostarted": False,
     "workflow_path": "./workflows/vace_template.json",
     "gen_status": "idle",      # idle | running | complete | error
     "gen_progress": 0,
@@ -448,8 +453,173 @@ def outputs_info():
 
 
 # ------------------------------------------------------------------
-# 6.  ComfyUI server check
+# 6.  ComfyUI server management  (check / auto-start / stop)
 # ------------------------------------------------------------------
+
+def _comfyui_is_reachable(server=None):
+    """Return True if ComfyUI is responding at the given address."""
+    server = server or state["comfyui_server"]
+    try:
+        import requests as _req
+        r = _req.get(f"http://{server}/system_stats", timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _start_comfyui(comfyui_path=None, extra_args=None):
+    """
+    Start ComfyUI as a background subprocess.
+
+    Args:
+        comfyui_path: Path to the ComfyUI installation directory
+                      (the folder containing main.py).
+        extra_args:   Additional CLI args (list of strings).
+
+    Returns:
+        subprocess.Popen or None on failure.
+    """
+    comfyui_path = comfyui_path or state.get("comfyui_path", "")
+    if not comfyui_path:
+        return None
+
+    main_py = os.path.join(comfyui_path, "main.py")
+    if not os.path.isfile(main_py):
+        print(f"[ComfyUI] main.py not found at {main_py}")
+        return None
+
+    # Build the command
+    cmd = [sys.executable, main_py, "--listen", "0.0.0.0", "--lowvram"]
+
+    # Parse host:port to pass --port if non-default
+    server = state.get("comfyui_server", "127.0.0.1:8188")
+    if ":" in server:
+        port = server.split(":")[-1]
+        if port != "8188":
+            cmd.extend(["--port", port])
+
+    if extra_args:
+        cmd.extend(extra_args)
+
+    print(f"[ComfyUI] Auto-starting: {' '.join(cmd)}")
+    print(f"[ComfyUI] Working directory: {comfyui_path}")
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=comfyui_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            # On Windows, CREATE_NEW_PROCESS_GROUP lets us stop it cleanly
+            creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP
+                           if sys.platform == "win32" else 0),
+        )
+        state["comfyui_process"] = proc
+        state["comfyui_autostarted"] = True
+
+        # Start a thread to drain stdout so the pipe doesn't fill up
+        def _drain(p):
+            try:
+                for line in iter(p.stdout.readline, b""):
+                    print(f"[ComfyUI] {line.decode(errors='replace').rstrip()}")
+            except Exception:
+                pass
+        threading.Thread(target=_drain, args=(proc,), daemon=True).start()
+
+        return proc
+    except Exception as exc:
+        print(f"[ComfyUI] Failed to start: {exc}")
+        return None
+
+
+def _wait_for_comfyui(timeout=120, poll_interval=2):
+    """
+    Block until ComfyUI becomes reachable or *timeout* seconds elapse.
+
+    Returns True if server came up, False on timeout.
+    """
+    server = state["comfyui_server"]
+    deadline = time.time() + timeout
+    print(f"[ComfyUI] Waiting for server at {server} (timeout {timeout}s) ...")
+
+    while time.time() < deadline:
+        # Check if the process died
+        proc = state.get("comfyui_process")
+        if proc and proc.poll() is not None:
+            print(f"[ComfyUI] Process exited with code {proc.returncode}")
+            return False
+
+        if _comfyui_is_reachable(server):
+            print(f"[ComfyUI] Server is ready at {server}")
+            return True
+
+        time.sleep(poll_interval)
+
+    print(f"[ComfyUI] Timed out after {timeout}s")
+    return False
+
+
+def _stop_comfyui():
+    """Gracefully stop a ComfyUI process we auto-started."""
+    proc = state.get("comfyui_process")
+    if proc is None:
+        return
+
+    print("[ComfyUI] Stopping auto-started server ...")
+    try:
+        if sys.platform == "win32":
+            proc.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            proc.terminate()
+        proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    except Exception as exc:
+        print(f"[ComfyUI] Error stopping: {exc}")
+    finally:
+        state["comfyui_process"] = None
+        state["comfyui_autostarted"] = False
+        print("[ComfyUI] Stopped.")
+
+
+def _ensure_comfyui():
+    """
+    Make sure ComfyUI is reachable.  Auto-start it if a path is configured
+    and the server isn't already running.
+
+    Returns (ok: bool, message: str).
+    """
+    server = state["comfyui_server"]
+
+    # Already running?
+    if _comfyui_is_reachable(server):
+        return True, f"ComfyUI reachable at {server}"
+
+    # Can we auto-start?
+    comfyui_path = state.get("comfyui_path", "")
+    if not comfyui_path:
+        return False, (
+            f"Cannot reach ComfyUI at {server} and no ComfyUI path is configured. "
+            f"Either start ComfyUI manually or set --comfyui-path / COMFYUI_PATH."
+        )
+
+    # Auto-start
+    proc = _start_comfyui(comfyui_path)
+    if proc is None:
+        return False, (
+            f"Failed to start ComfyUI from {comfyui_path}. "
+            f"Check that main.py exists in that directory."
+        )
+
+    if _wait_for_comfyui(timeout=120):
+        return True, f"ComfyUI auto-started and ready at {server}"
+    else:
+        _stop_comfyui()
+        return False, (
+            f"ComfyUI was started but did not become reachable within 120s. "
+            f"Check the logs above for errors."
+        )
+
 
 @app.route("/api/comfyui/check", methods=["POST"])
 def check_comfyui():
@@ -462,12 +632,52 @@ def check_comfyui():
         from generate_reskin import ComfyOrchestrator
         orch = ComfyOrchestrator(server)
         if orch.check_server():
-            return jsonify({"status": "ok", "message": f"ComfyUI reachable at {server}"})
+            return jsonify({
+                "status": "ok",
+                "message": f"ComfyUI reachable at {server}",
+                "autostarted": state.get("comfyui_autostarted", False),
+            })
         else:
-            return jsonify({"status": "error",
-                            "message": f"Cannot reach ComfyUI at {server}"}), 503
+            return jsonify({
+                "status": "error",
+                "message": f"Cannot reach ComfyUI at {server}",
+                "can_autostart": bool(state.get("comfyui_path")),
+            }), 503
     except Exception as exc:
         return jsonify({"status": "error", "message": str(exc)}), 500
+
+
+@app.route("/api/comfyui/start", methods=["POST"])
+def start_comfyui():
+    """Manually trigger ComfyUI auto-start from the UI."""
+    if _comfyui_is_reachable():
+        return jsonify({
+            "status": "ok",
+            "message": "ComfyUI is already running."
+        })
+
+    data = request.get_json(force=True) if request.is_json else {}
+    path = data.get("path", state.get("comfyui_path", ""))
+    if path:
+        state["comfyui_path"] = path
+
+    ok, msg = _ensure_comfyui()
+    if ok:
+        return jsonify({"status": "ok", "message": msg})
+    else:
+        return jsonify({"status": "error", "message": msg}), 500
+
+
+@app.route("/api/comfyui/stop", methods=["POST"])
+def stop_comfyui():
+    """Stop a ComfyUI server we auto-started."""
+    if not state.get("comfyui_autostarted"):
+        return jsonify({
+            "status": "ok",
+            "message": "ComfyUI was not auto-started by this app."
+        })
+    _stop_comfyui()
+    return jsonify({"status": "ok", "message": "ComfyUI stopped."})
 
 
 # ------------------------------------------------------------------
@@ -811,18 +1021,35 @@ def _run_generation():
             {"label": "Retrieve output", "status": "pending", "detail": ""},
         ]
 
-        # Step 0: Check connection
+        # Step 0: Check connection (auto-start if needed)
         _update_gen_sub(0, "running", "Connecting...")
         state["gen_message"] = "Checking ComfyUI connection..."
         state["gen_progress"] = 2
 
         orch = ComfyOrchestrator(server)
         if not orch.check_server():
-            raise RuntimeError(
-                f"Cannot reach ComfyUI at {server}. "
-                "Start ComfyUI with: python main.py --listen 0.0.0.0 --lowvram"
-            )
-        _update_gen_sub(0, "complete", "Connected")
+            # Attempt auto-start
+            comfyui_path = state.get("comfyui_path", "")
+            if comfyui_path:
+                _update_gen_sub(0, "running", "Auto-starting ComfyUI...")
+                state["gen_message"] = "ComfyUI not running — auto-starting..."
+                ok, msg = _ensure_comfyui()
+                if not ok:
+                    raise RuntimeError(msg)
+                # Re-check after auto-start
+                if not orch.check_server():
+                    raise RuntimeError(
+                        f"ComfyUI was started but still not reachable at {server}."
+                    )
+            else:
+                raise RuntimeError(
+                    f"Cannot reach ComfyUI at {server} and no ComfyUI path is "
+                    f"configured for auto-start. Set --comfyui-path or the "
+                    f"COMFYUI_PATH environment variable to enable auto-start, "
+                    f"or start ComfyUI manually."
+                )
+        _update_gen_sub(0, "complete",
+                        "Connected" + (" (auto-started)" if state.get("comfyui_autostarted") else ""))
         state["gen_progress"] = 5
 
         # Validate inputs
@@ -1026,8 +1253,15 @@ def main():
     ap.add_argument("--pose-mode", default="balanced",
                     choices=["performance", "balanced", "lightweight"])
     ap.add_argument("--device", default="cuda")
-    ap.add_argument("--comfyui-server", default="127.0.0.1:8188",
-                    help="ComfyUI server address (host:port)")
+    ap.add_argument("--comfyui-server",
+                    default=os.environ.get("COMFYUI_SERVER", "127.0.0.1:8188"),
+                    help="ComfyUI server address (host:port). "
+                         "Also reads COMFYUI_SERVER env var.")
+    ap.add_argument("--comfyui-path",
+                    default=os.environ.get("COMFYUI_PATH", ""),
+                    help="Path to ComfyUI installation directory (contains main.py). "
+                         "Enables auto-start when ComfyUI isn't running. "
+                         "Also reads COMFYUI_PATH env var.")
     ap.add_argument("--workflow",
                     default="./workflows/vace_template.json",
                     help="ComfyUI workflow template JSON")
@@ -1045,6 +1279,7 @@ def main():
         "pose_mode": args.pose_mode,
         "device": args.device,
         "comfyui_server": args.comfyui_server,
+        "comfyui_path": args.comfyui_path,
         "workflow_path": args.workflow,
     })
 
@@ -1064,10 +1299,21 @@ def main():
             webbrowser.open(f"http://localhost:{args.port}")
         threading.Thread(target=_open, daemon=True).start()
 
+    # Register cleanup for auto-started ComfyUI
+    import atexit
+    atexit.register(_stop_comfyui)
+
+    comfyui_info = ""
+    if args.comfyui_path:
+        comfyui_info = f"\n  ComfyUI path : {args.comfyui_path}  (auto-start enabled)"
+    else:
+        comfyui_info = (f"\n  ComfyUI      : {args.comfyui_server}  "
+                        f"(auto-start disabled — set --comfyui-path to enable)")
+
     print()
     print("=" * 60)
     print("  Skate Physics Preserver — Web Validation UI")
-    print(f"  http://localhost:{args.port}")
+    print(f"  http://localhost:{args.port}{comfyui_info}")
     print("=" * 60)
     print()
 

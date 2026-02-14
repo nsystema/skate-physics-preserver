@@ -1,21 +1,70 @@
 # =============================================================================
-# docker compose build        -> builds the image (~10 min first time)
-# docker compose run pipeline <cmd>  -> run any command inside the container
+# Skate Physics Preserver — Full Stack
 #
-# Examples (PowerShell — put everything on one line):
-#   # Web validation UI (recommended):
-#   docker compose run --rm -p 5000:5000 pipeline src/app.py --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+#   docker compose build                    -> build both images
+#   docker compose up                       -> start ComfyUI + Web UI
+#   docker compose up comfyui               -> start ComfyUI only
+#   docker compose run --rm pipeline ...    -> run CLI commands
 #
-#   # Headless CLI:
-#   docker compose run --rm pipeline src/extract_physics.py --video /data/input/skate.mp4 --output /data/output --bbox "120,340,280,410"
+# First run downloads ~8 GB of AI models into the comfyui-models volume.
+# Subsequent starts are instant.
 #
-#   # Dependency check:
+# Examples (PowerShell — everything on one line, or use backtick `):
+#   # Full stack (recommended — just open http://localhost:5000):
+#   docker compose up
+#
+#   # Dependency check only:
 #   docker compose run --rm pipeline src/extract_physics.py --check
 #
-# Note: In Bash/Linux, you can split with \ at end of line. PowerShell uses `
+# Note: Bash uses \ for line continuation. PowerShell uses `
 # =============================================================================
 
 services:
+  # ================================================================
+  # ComfyUI — Generative video server  (Stage 2)
+  # ================================================================
+  comfyui:
+    build:
+      context: .
+      dockerfile: Dockerfile.comfyui
+    image: skate-comfyui:latest
+
+    # ---- GPU access ----
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    ports:
+      - "8188:8188"
+
+    volumes:
+      # Persistent model storage (~8 GB, survives container rebuilds)
+      - comfyui-models:/comfyui/models
+      # Pipeline output → ComfyUI input (so uploads work via shared filesystem)
+      - ./output:/comfyui/input/pipeline_output
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+    # Health check: ComfyUI is ready when /system_stats responds.
+    # start_period is generous for first-run model downloads (~8 GB).
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8188/system_stats"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 600s
+
+    restart: unless-stopped
+
+  # ================================================================
+  # Pipeline — Extraction + Web UI  (Stages 1, 3, orchestration)
+  # ================================================================
   pipeline:
     build:
       context: .
@@ -31,15 +80,11 @@ services:
               count: 1
               capabilities: [gpu]
 
-    # ---- Web UI port (app.py serves on 5000) ----
+    # ---- Web UI port ----
     ports:
       - "5000:5000"
 
     # ---- Persistent data volumes ----
-    # Put your files on the HOST in these folders:
-    #   ./checkpoints/sam2.1_hiera_small.pt
-    #   ./input/skate.mp4
-    # Outputs appear in ./output/
     volumes:
       - ./checkpoints:/data/checkpoints
       - ./input:/data/input
@@ -51,13 +96,28 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      # Use host's ComfyUI via host.docker.internal:8188
-      - COMFYUI_SERVER=host.docker.internal:8188
+      # Point at the ComfyUI container (Docker service name resolution)
+      - COMFYUI_SERVER=comfyui:8188
 
-    # ---- Defaults ----
+    # Start after ComfyUI begins (but don't wait for health — the web UI
+    # should be available immediately while ComfyUI downloads models in the
+    # background on first run).  Generation step checks ComfyUI connectivity.
+    depends_on:
+      comfyui:
+        condition: service_started
+
+    # ---- Default: launch the web UI ----
     working_dir: /app
     entrypoint: ["python"]
+    command:
+      - "src/app.py"
+      - "--output"
+      - "/data/output"
+      - "--sam-checkpoint"
+      - "/data/checkpoints/sam2.1_hiera_small.pt"
 
-    # Override SAM2 checkpoint path inside the container
-    # (matches the /data/checkpoints mount)
-    command: ["src/extract_physics.py", "--check"]
+# ================================================================
+# Named volume for ComfyUI models (persists across rebuilds)
+# ================================================================
+volumes:
+  comfyui-models:

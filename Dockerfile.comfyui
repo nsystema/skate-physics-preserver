@@ -1,0 +1,76 @@
+# =============================================================================
+# ComfyUI Docker Image for Skate Physics Preserver
+# Target: RTX 3070 8GB | CUDA 12.4 | Python 3.11
+#
+# Installs ComfyUI + required custom nodes.  Models are downloaded on first
+# start by the entrypoint script (persisted in a Docker volume).
+#
+# Build:  docker compose build comfyui
+# =============================================================================
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+# ---------- System dependencies ----------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        software-properties-common \
+        git curl wget ca-certificates \
+        ffmpeg libsm6 libxext6 libgl1-mesa-glx libglib2.0-0 \
+        build-essential gcc g++ \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.11 python3.11-venv python3.11-dev python3.11-distutils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.11 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+    update-alternatives --install /usr/bin/python  python  /usr/bin/python3.11 1 && \
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+
+# ---------- PyTorch (CUDA 12.4) ----------
+RUN pip install --no-cache-dir \
+    torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# ---------- Clone ComfyUI ----------
+WORKDIR /comfyui
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git /comfyui && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ---------- Custom Nodes ----------
+WORKDIR /comfyui/custom_nodes
+
+# VideoHelperSuite (VHS_LoadVideo, VHS_LoadImages, VHS_VideoCombine)
+RUN git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite && \
+    pip install --no-cache-dir -r ComfyUI-VideoHelperSuite/requirements.txt || true
+
+# ComfyUI-GGUF (loading GGUF quantized models)
+RUN git clone https://github.com/city96/ComfyUI-GGUF && \
+    pip install --no-cache-dir -r ComfyUI-GGUF/requirements.txt || true
+
+# ComfyUI-WanVideoWrapper (Wan 2.1 video model support)
+RUN git clone https://github.com/kijai/ComfyUI-WanVideoWrapper && \
+    pip install --no-cache-dir -r ComfyUI-WanVideoWrapper/requirements.txt || true
+
+# ---------- Create model directories ----------
+WORKDIR /comfyui
+RUN mkdir -p models/unet models/clip models/vae models/checkpoints \
+            input output
+
+# ---------- Entrypoint script ----------
+COPY scripts/comfyui-start.sh /comfyui/start.sh
+# Fix Windows CRLF -> LF (in case repo was cloned on Windows)
+RUN sed -i 's/\r$//' /comfyui/start.sh && chmod +x /comfyui/start.sh
+
+# ---------- Smoke test ----------
+RUN python -c "\
+import torch; \
+print(f'  torch {torch.__version__}  CUDA {torch.version.cuda}'); \
+print('=== ComfyUI image ready ==='); \
+"
+
+EXPOSE 8188
+WORKDIR /comfyui
+ENTRYPOINT ["/comfyui/start.sh"]

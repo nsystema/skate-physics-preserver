@@ -48,9 +48,9 @@ output/              output/          output/
 
 ## Quick Start (Docker)
 
-Docker eliminates every dependency issue. One build, zero debugging.
+Docker handles **everything** — the extraction pipeline, ComfyUI, custom nodes, and AI model downloads. One command to build, one command to run.
 
-> **PowerShell users:** All commands below use backtick (`` ` ``) for line continuation, not backslash (`\`). Backslash will cause parse errors in PowerShell. Bash equivalents are in collapsible sections where needed.
+> **PowerShell users:** Commands below use backtick (`` ` ``) for line continuation. Bash uses backslash (`\`). Both are shown where needed.
 
 ### Prerequisites
 
@@ -59,13 +59,13 @@ Docker eliminates every dependency issue. One build, zero debugging.
 | Docker Desktop (WSL2 backend) | `docker --version` | [docker.com/desktop](https://www.docker.com/products/docker-desktop/) |
 | NVIDIA GPU Driver 525+ | `nvidia-smi` | [nvidia.com/drivers](https://www.nvidia.com/download/index.aspx) |
 | NVIDIA Container Toolkit | `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi` | [see below](#nvidia-container-toolkit) |
-| ~15 GB free disk | for the Docker image | |
+| ~25 GB free disk | Docker images (~15 GB) + AI models (~8 GB) | |
 
 ### 1. Build
 
 ```bash
 cd skate-physics-preserver
-docker compose build          # ~10-15 min first time, cached after
+docker compose build          # ~15-20 min first time (builds pipeline + ComfyUI)
 ```
 
 ### 2. Download SAM2 checkpoint
@@ -82,59 +82,50 @@ Invoke-WebRequest -Uri "https://dl.fbaipublicfiles.com/segment_anything_2/092824
 <summary>Bash / Git Bash</summary>
 
 ```bash
-mkdir checkpoints
+mkdir -p checkpoints
 curl -L -o checkpoints/sam2.1_hiera_small.pt \
   https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
 ```
 </details>
 
-DWPose ONNX models auto-download on first run (~200 MB, cached).
-
-### 3. Verify
+### 3. Launch everything
 
 ```bash
-docker compose run --rm pipeline src/extract_physics.py --check
+docker compose up
 ```
 
-### 4. Launch the Web UI
+That's it. This starts both services:
 
-**PowerShell:**
+| Service | Port | What it does |
+|---------|------|-------------|
+| **comfyui** | 8188 | ComfyUI server (downloads ~8 GB of models on first run, then starts) |
+| **pipeline** | 5000 | Web UI — waits for ComfyUI to be healthy, then launches |
 
-```powershell
-docker compose run --rm -p 5000:5000 pipeline src/app.py `
-  --output /data/output `
-  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
-```
+Open **http://localhost:5000** once you see the startup banner. The first run takes a few minutes while ComfyUI downloads the Wan 2.1 VACE, CLIP, and VAE models (~8 GB total). These are cached in a Docker volume and persist across restarts.
 
-<details>
-<summary>Bash / Git Bash</summary>
+> DWPose ONNX models (~200 MB) auto-download on first extraction run and are also cached.
 
-```bash
-docker compose run --rm -p 5000:5000 pipeline src/app.py \
-  --output /data/output \
-  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
-```
-</details>
-
-Open **http://localhost:5000** in your browser. The UI walks you through six steps:
+### What the UI does
 
 | Step | What happens |
 |------|-------------|
 | **1. Upload** | Drop a video file or paste a YouTube URL |
 | **2. Detect** | YOLO finds skater + skateboard, SAM 2.1 segments them on frame 0. Manual click fallback if needed. |
 | **3. Extract** | Approve masks, DWPose skeletons + SAM mask propagation run with live progress |
-| **4. Generate** | Enter positive/negative prompts, check ComfyUI connection, click Generate |
+| **4. Generate** | Enter positive/negative prompts, click Generate (ComfyUI is already running) |
 | **5. Validate** | Reverse-track the generated video, view per-frame IoU chart and pass/fail result |
 | **6. Results** | Side-by-side original vs generated video, frame-by-frame pose/mask/overlay scrubber, IoU report |
 
 > Stages 2 and 3 are optional -- skip either with the UI buttons and go straight to results.
 
-You can also pre-load a video from the command line:
+### Pre-loading a video
+
+You can pass a video or YouTube URL on the command line:
 
 **PowerShell:**
 
 ```powershell
-docker compose run --rm -p 5000:5000 pipeline src/app.py `
+docker compose run --rm --service-ports pipeline src/app.py `
   --video /data/input/skate_clip.mp4 `
   --output /data/output `
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
@@ -144,7 +135,7 @@ docker compose run --rm -p 5000:5000 pipeline src/app.py `
 <summary>Bash / Git Bash</summary>
 
 ```bash
-docker compose run --rm -p 5000:5000 pipeline src/app.py \
+docker compose run --rm --service-ports pipeline src/app.py \
   --video /data/input/skate_clip.mp4 \
   --output /data/output \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
@@ -153,18 +144,17 @@ docker compose run --rm -p 5000:5000 pipeline src/app.py \
 
 YouTube URLs work too: `--video "https://www.youtube.com/watch?v=VIDEO_ID"`
 
-### ComfyUI requirement for Stage 2
+### Stopping
 
-The Generate step talks to a ComfyUI server. Start it on your host machine **before** clicking Generate:
-
-```powershell
-cd C:\path\to\ComfyUI
-python main.py --listen 0.0.0.0 --port 8188 --lowvram
+```bash
+docker compose down           # stop both services
 ```
 
-The web UI's "Check Connection" button verifies connectivity before you start. Default server address is `127.0.0.1:8188` (change it in the UI if needed).
+ComfyUI models persist in the `comfyui-models` Docker volume. To reclaim disk space:
 
-> On Docker for Windows, the UI resolves `host.docker.internal` automatically. On Linux, use your host's LAN IP or add `--network host`.
+```bash
+docker volume rm skate-physics-preserver_comfyui-models
+```
 
 ---
 
@@ -319,7 +309,7 @@ output/
 
 ## ComfyUI Setup
 
-Stage 2 (generation) requires a running ComfyUI server with specific custom nodes and models.
+> **Docker users:** ComfyUI is installed and configured automatically by `docker compose up`. The information below is only needed for native (non-Docker) setups or customization.
 
 ### Custom Nodes
 
@@ -334,11 +324,11 @@ git clone https://github.com/kijai/ComfyUI-WanVideoWrapper
 
 ### Models (for 8GB VRAM)
 
-| Model | Path in ComfyUI | Size |
-|-------|------|------|
-| Wan 2.1 VACE 1.3B GGUF Q8 | `models/unet/wan2.1_vace_1.3B_Q8_0.gguf` | ~1.3 GB |
-| UMT5-XXL FP8 | `models/clip/umt5_xxl_fp8_e4m3fn.safetensors` | ~5 GB |
-| Wan 2.1 VAE | `models/vae/wan_2.1_vae.safetensors` | ~200 MB |
+| Model | Path in ComfyUI | Size | Source |
+|-------|------|------|--------|
+| Wan 2.1 VACE 1.3B GGUF Q8 | `models/unet/wan2.1_vace_1.3B_Q8_0.gguf` | ~2.3 GB | [samuelchristlie/Wan2.1-VACE-1.3B-GGUF](https://huggingface.co/samuelchristlie/Wan2.1-VACE-1.3B-GGUF) |
+| UMT5-XXL FP8 | `models/clip/umt5_xxl_fp8_e4m3fn.safetensors` | ~6.7 GB | [Comfy-Org/Wan_2.1_ComfyUI_repackaged](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) |
+| Wan 2.1 VAE | `models/vae/wan_2.1_vae.safetensors` | ~254 MB | [Comfy-Org/Wan_2.1_ComfyUI_repackaged](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) |
 
 ### Custom Workflow
 
@@ -351,10 +341,18 @@ The template at `workflows/vace_template.json` is the default. To use your own:
 
 The script resolves nodes by `_meta.title` first, then falls back to `class_type`.
 
-### Launch ComfyUI
+### Launch ComfyUI (native only)
+
+For native installs, start ComfyUI manually:
 
 ```powershell
 python main.py --listen 0.0.0.0 --port 8188 --lowvram
+```
+
+Or let the web UI auto-start it by passing the install path:
+
+```powershell
+python src/app.py --output output/ --comfyui-path C:\path\to\ComfyUI
 ```
 
 ---
@@ -384,13 +382,16 @@ python main.py --listen 0.0.0.0 --port 8188 --lowvram
 
 ```
 skate-physics-preserver/
-+-- Dockerfile
-+-- docker-compose.yml
++-- Dockerfile                      # Pipeline image (extraction + web UI)
++-- Dockerfile.comfyui              # ComfyUI image (generation server)
++-- docker-compose.yml              # Full stack: pipeline + ComfyUI
 +-- README.md
 +-- requirements.txt
 +-- configs/
 |   +-- sam2.1/sam2.1_hiera_s.yaml
-+-- checkpoints/                    # model weights (host-mounted)
++-- scripts/
+|   +-- comfyui-start.sh           # ComfyUI entrypoint (model download + start)
++-- checkpoints/                    # SAM2 weights (host-mounted)
 +-- input/                          # source videos (host-mounted)
 +-- output/                         # pipeline outputs (host-mounted)
 +-- workflows/
@@ -415,7 +416,13 @@ skate-physics-preserver/
 ### Docker
 
 **Can't connect to the web UI**
-> Open **http://localhost:5000**, not the container IP. Verify the container started (look for the banner in the terminal).
+> Open **http://localhost:5000**, not the container IP. Verify both services started: `docker compose ps`.
+
+**ComfyUI model download is slow / stalled**
+> First run downloads ~8 GB from HuggingFace. Downloads have resume support — if interrupted, restart with `docker compose up` and it will continue where it left off. You can also monitor progress in the ComfyUI container logs: `docker compose logs -f comfyui`.
+
+**Pipeline starts before ComfyUI is ready**
+> The pipeline waits for ComfyUI's health check. If it times out, restart: `docker compose restart pipeline`.
 
 **PowerShell line continuation errors**
 > PowerShell uses backtick (`` ` ``) not backslash. Or put the entire command on one line.
@@ -429,10 +436,10 @@ skate-physics-preserver/
 > 3. Test: `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi`
 
 **"CUDA out of memory"**
-> Close other GPU apps. The container shares VRAM with the host.
+> Close other GPU apps. Both containers share the same GPU. The pipeline releases VRAM after extraction so ComfyUI can use it for generation.
 
-**"host.docker.internal" not resolving (Linux)**
-> Add `--add-host=host.docker.internal:host-gateway` or use `--network host`.
+**Reclaim disk space from models**
+> `docker volume rm skate-physics-preserver_comfyui-models` (will re-download on next start).
 
 <a id="nvidia-container-toolkit"></a>
 **NVIDIA Container Toolkit (Linux)**
@@ -455,7 +462,7 @@ sudo systemctl restart docker
 
 **DWPose Model Download Fails** -- download manually from [rtmlib releases](https://github.com/Tau-J/rtmlib/releases) and place in `~/.cache/rtmlib/`.
 
-**ComfyUI Connection Refused** -- run `python src/generate_reskin.py --check` to test, then start ComfyUI with `python main.py --listen 0.0.0.0 --port 8188 --lowvram`.
+**ComfyUI Connection Refused** -- If using Docker, run `docker compose ps` to verify the ComfyUI container is running. For native installs, either start ComfyUI manually (`python main.py --listen 0.0.0.0 --port 8188 --lowvram`) or pass `--comfyui-path` to let the app auto-start it.
 
 ---
 
