@@ -143,6 +143,58 @@ def auto_detect_bbox(video_path):
 
 
 # ---------------------------------------------------------------------------
+# Persistence — skip processing for already-processed videos
+# ---------------------------------------------------------------------------
+
+def check_existing_outputs(video_path, output_dir):
+    """
+    Check if a video was already fully processed and valid outputs exist.
+
+    Returns the loaded metadata dict if cache is valid, None otherwise.
+    """
+    meta_path = os.path.join(output_dir, "tracking_metadata.json")
+    if not os.path.isfile(meta_path):
+        return None
+
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            metadata = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
+
+    # Check that the video matches (same absolute path)
+    stored_video = metadata.get("video", "")
+    current_abs = os.path.abspath(video_path)
+    if os.path.normpath(stored_video) != os.path.normpath(current_abs):
+        return None
+
+    if not os.path.isfile(current_abs):
+        return None
+
+    # Verify file size if available (guards against file replacement)
+    stored_size = metadata.get("video_size")
+    if stored_size is not None:
+        try:
+            actual_size = os.path.getsize(current_abs)
+            if actual_size != stored_size:
+                return None
+        except OSError:
+            return None
+
+    # Check that key output directories have files
+    dirs_found = 0
+    for key in ["masks_dir", "masks_skateboard_dir", "poses_dir", "json_dir"]:
+        d = metadata.get(key, "")
+        if d and os.path.isdir(d) and os.listdir(d):
+            dirs_found += 1
+
+    if dirs_found < 2:
+        return None
+
+    return metadata
+
+
+# ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 
@@ -219,6 +271,24 @@ def main():
     os.makedirs(args.output, exist_ok=True)
 
     # ------------------------------------------------------------------
+    # Persistence check: skip if already processed
+    # ------------------------------------------------------------------
+    existing = check_existing_outputs(video_path, args.output)
+    if existing:
+        print("\n" + "=" * 60)
+        print("  CACHED — SKIPPING DETECTION & EXTRACTION")
+        print("=" * 60)
+        print(f"  Video already processed. Loading results from cache.")
+        print(f"  Mask frames : {existing.get('mask_frames', '?')}  "
+              f"-> {existing.get('masks_dir', masks_dir)}")
+        print(f"  Pose frames : {existing.get('pose_frames', '?')}  "
+              f"-> {existing.get('poses_dir', poses_dir)}")
+        print(f"  Metadata    : {os.path.join(args.output, 'tracking_metadata.json')}")
+        print(f"\n  To force re-processing, delete tracking_metadata.json")
+        print("=" * 60 + "\n")
+        return 0
+
+    # ------------------------------------------------------------------
     # PASS 1: DWPose (lighter on VRAM, run first)
     # ------------------------------------------------------------------
     print("\n" + "=" * 60)
@@ -281,6 +351,7 @@ def main():
     metadata = {
         "source": args.video,          # original arg (may be URL)
         "video": os.path.abspath(video_path),
+        "video_size": os.path.getsize(os.path.abspath(video_path)),
         "bbox": user_bbox,
         "mask_frames": n_mask_frames,
         "pose_frames": n_pose_frames,

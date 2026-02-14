@@ -1216,6 +1216,19 @@ function onVideoLoaded(data, displayName) {
   const dimStr = `${data.width}x${data.height}`;
   $('#vi-meta').textContent = [dimStr, fpsStr, durStr].filter(Boolean).join(' · ');
 
+  /* --- Persistence: skip detect & extract if already processed --- */
+  if (data.already_processed) {
+    uploadSt.textContent = '';
+    $('#vi-meta').textContent += '  ·  Already processed (cached)';
+    // Jump directly to the Generate step (Stage 2)
+    onPipelineComplete({
+      frame_count: data.frame_count || 0,
+      fps: data.fps || 30,
+      duration: data.duration || 0,
+    });
+    return;
+  }
+
   runAutoDetect();
 }
 
