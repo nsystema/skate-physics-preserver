@@ -50,6 +50,8 @@ output/              output/          output/
 
 Docker eliminates every dependency issue. One build, zero debugging.
 
+> **PowerShell users:** All commands below use backtick (`` ` ``) for line continuation, not backslash (`\`). Backslash will cause parse errors in PowerShell. Bash equivalents are in collapsible sections where needed.
+
 ### Prerequisites
 
 | Requirement | Check with | Install |
@@ -68,19 +70,21 @@ docker compose build          # ~10-15 min first time, cached after
 
 ### 2. Download SAM2 checkpoint
 
-```bash
-mkdir checkpoints
-curl -L -o checkpoints/sam2.1_hiera_small.pt \
-  https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
-```
-
-<details>
-<summary>PowerShell</summary>
+**PowerShell:**
 
 ```powershell
 New-Item -ItemType Directory -Force checkpoints
 Invoke-WebRequest -Uri "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt" `
   -OutFile "checkpoints/sam2.1_hiera_small.pt"
+```
+
+<details>
+<summary>Bash / Git Bash</summary>
+
+```bash
+mkdir checkpoints
+curl -L -o checkpoints/sam2.1_hiera_small.pt \
+  https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
 ```
 </details>
 
@@ -94,17 +98,21 @@ docker compose run --rm pipeline src/extract_physics.py --check
 
 ### 4. Launch the Web UI
 
-```bash
-docker compose run --rm -p 5000:5000 pipeline src/app.py \
-  --output /data/output \
+**PowerShell:**
+
+```powershell
+docker compose run --rm -p 5000:5000 pipeline src/app.py `
+  --output /data/output `
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 
 <details>
-<summary>PowerShell (single line)</summary>
+<summary>Bash / Git Bash</summary>
 
-```powershell
-docker compose run --rm -p 5000:5000 pipeline src/app.py --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+```bash
+docker compose run --rm -p 5000:5000 pipeline src/app.py \
+  --output /data/output \
+  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 </details>
 
@@ -123,12 +131,25 @@ Open **http://localhost:5000** in your browser. The UI walks you through six ste
 
 You can also pre-load a video from the command line:
 
+**PowerShell:**
+
+```powershell
+docker compose run --rm -p 5000:5000 pipeline src/app.py `
+  --video /data/input/skate_clip.mp4 `
+  --output /data/output `
+  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+```
+
+<details>
+<summary>Bash / Git Bash</summary>
+
 ```bash
 docker compose run --rm -p 5000:5000 pipeline src/app.py \
   --video /data/input/skate_clip.mp4 \
   --output /data/output \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
+</details>
 
 YouTube URLs work too: `--video "https://www.youtube.com/watch?v=VIDEO_ID"`
 
@@ -136,8 +157,8 @@ YouTube URLs work too: `--video "https://www.youtube.com/watch?v=VIDEO_ID"`
 
 The Generate step talks to a ComfyUI server. Start it on your host machine **before** clicking Generate:
 
-```bash
-cd /path/to/ComfyUI
+```powershell
+cd C:\path\to\ComfyUI
 python main.py --listen 0.0.0.0 --port 8188 --lowvram
 ```
 
@@ -151,15 +172,38 @@ The web UI's "Check Connection" button verifies connectivity before you start. D
 
 ### 1. Environment
 
+**PowerShell:**
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 `
+  --index-url https://download.pytorch.org/whl/cu124
+
+$env:SAM2_BUILD_CUDA=0
+pip install git+https://github.com/facebookresearch/sam2.git@main
+
+pip install rtmlib==0.0.15
+pip uninstall -y onnxruntime
+pip install onnxruntime-gpu==1.20.1
+
+pip install opencv-python==4.11.0.86 "av>=12.0.0" websocket-client `
+  requests tqdm matplotlib "numpy<2.0" hydra-core==1.3.2 yt-dlp `
+  "ultralytics>=8.3.0" "flask>=3.0.0"
+```
+
+<details>
+<summary>Bash / Linux / Mac</summary>
+
 ```bash
 python -m venv venv
-source venv/bin/activate          # Linux/Mac
-# .\venv\Scripts\Activate.ps1    # Windows PowerShell
+source venv/bin/activate
 
 pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
   --index-url https://download.pytorch.org/whl/cu124
 
-set SAM2_BUILD_CUDA=0             # Windows without nvcc
+export SAM2_BUILD_CUDA=0
 pip install git+https://github.com/facebookresearch/sam2.git@main
 
 pip install rtmlib==0.0.15
@@ -170,30 +214,47 @@ pip install opencv-python==4.11.0.86 "av>=12.0.0" websocket-client \
   requests tqdm matplotlib "numpy<2.0" hydra-core==1.3.2 yt-dlp \
   "ultralytics>=8.3.0" "flask>=3.0.0"
 ```
+</details>
+
+> **Note:** `$env:SAM2_BUILD_CUDA=0` is needed on Windows if you don't have `nvcc` in PATH.
+> YOLOv8-nano weights (~6 MB) are auto-downloaded on first run.
 
 ### 2. Download checkpoint
+
+**PowerShell:**
+
+```powershell
+New-Item -ItemType Directory -Force checkpoints
+Invoke-WebRequest -Uri "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt" `
+  -OutFile "checkpoints/sam2.1_hiera_small.pt"
+```
+
+<details>
+<summary>Bash / Git Bash</summary>
 
 ```bash
 mkdir checkpoints
 curl -L -o checkpoints/sam2.1_hiera_small.pt \
   https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
 ```
+</details>
 
 ### 3. Verify
 
-```bash
+```powershell
 python src/extract_physics.py --check
 ```
 
 ### 4. Launch the Web UI
 
-```bash
+```powershell
+# Launch the web UI
 python src/app.py --output output/
 
-# or pre-load a video
+# Or pre-load a video
 python src/app.py --video input.mp4 --output output/
 
-# or a YouTube URL
+# Or with a YouTube URL
 python src/app.py --video "https://www.youtube.com/watch?v=VIDEO_ID" --output output/
 ```
 
@@ -207,31 +268,37 @@ All three stages can also be run from the command line without the web UI.
 
 **Stage 1 -- Extract:**
 
-```bash
-python src/extract_physics.py \
-  --video input.mp4 \
-  --output output/ \
+```powershell
+python src/extract_physics.py `
+  --video input.mp4 `
+  --output output/ `
   --bbox "120,340,280,410"        # optional, auto-detects if omitted
 ```
 
 **Stage 2 -- Generate** (ComfyUI must be running):
 
-```bash
-python src/generate_reskin.py \
-  --source-video input.mp4 \
-  --masks-dir output/mask_skateboard \
-  --poses-dir output/pose_skater \
-  --positive-prompt "cyberpunk samurai riding a neon hoverboard, cinematic" \
+```powershell
+python src/generate_reskin.py `
+  --source-video input.mp4 `
+  --masks-dir output/mask_skateboard `
+  --poses-dir output/pose_skater `
+  --positive-prompt "cyberpunk samurai riding a neon hoverboard, cinematic" `
   --output-dir output/generated
 ```
 
 **Stage 3 -- Validate:**
 
-```bash
-python src/evaluate_iou.py \
-  --metadata output/tracking_metadata.json \
+```powershell
+python src/evaluate_iou.py `
+  --metadata output/tracking_metadata.json `
   --generated output/generated/output.mp4
 ```
+
+<details>
+<summary>Bash equivalents (replace backtick with backslash)</summary>
+
+In Bash, use `\` instead of `` ` `` for line continuation. Everything else is the same.
+</details>
 
 **Output structure:**
 
@@ -286,7 +353,7 @@ The script resolves nodes by `_meta.title` first, then falls back to `class_type
 
 ### Launch ComfyUI
 
-```bash
+```powershell
 python main.py --listen 0.0.0.0 --port 8188 --lowvram
 ```
 
