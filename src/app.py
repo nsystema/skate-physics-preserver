@@ -1009,6 +1009,7 @@ def _run_generation():
         workflow_path = state["workflow_path"]
         source_video = state["video_path"]
         masks_dir = os.path.join(state["output_dir"], "mask_skateboard")
+        skater_masks_dir = os.path.join(state["output_dir"], "mask_skater")
         poses_dir = os.path.join(state["output_dir"], "pose_skater")
         output_dir = os.path.join(state["output_dir"], "generated")
         positive_prompt = state["_positive_prompt"]
@@ -1101,6 +1102,7 @@ def _run_generation():
             positive_prompt=positive_prompt,
             negative_prompt=negative_prompt,
             output_dir=output_dir,
+            skater_masks_dir=skater_masks_dir,
         )
 
         state["generated_video_path"] = output_file

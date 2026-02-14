@@ -142,6 +142,49 @@ def auto_detect_bbox(video_path):
     return bbox
 
 
+def auto_detect_skater_bbox(video_path):
+    """
+    Auto-detect the skater (person) on frame 0 using YOLOv8.
+    Returns [x1, y1, x2, y2] bbox or None if not found.
+    """
+    try:
+        from ultralytics import YOLO
+    except ImportError:
+        print("[WARN] ultralytics not installed — cannot auto-detect skater.")
+        print("       Install with:  pip install ultralytics")
+        return None
+
+    cap = cv2.VideoCapture(video_path)
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        return None
+
+    model = YOLO("yolov8n.pt")  # auto-downloads if missing
+    results = model(frame, verbose=False)
+
+    # Find the largest person detection (COCO class 0)
+    best_box = None
+    best_area = 0
+    for r in results:
+        for box in r.boxes:
+            cls = int(box.cls[0])
+            if cls != 0:  # class 0 = person
+                continue
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            area = (x2 - x1) * (y2 - y1)
+            if area > best_area:
+                best_area = area
+                best_box = [int(x1), int(y1), int(x2), int(y2)]
+
+    if best_box:
+        print(f"[INFO] YOLO detected skater: {best_box}")
+    else:
+        print("[WARN] YOLO did not detect a person on frame 0.")
+
+    return best_box
+
+
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
@@ -157,6 +200,11 @@ def main():
         "--bbox", type=str, default=None,
         help="Skateboard bounding box as 'x1,y1,x2,y2'. "
              "If omitted, attempts contour-based auto-detection."
+    )
+    parser.add_argument(
+        "--skater-bbox", type=str, default=None,
+        help="Skater bounding box as 'x1,y1,x2,y2'. "
+             "If omitted, auto-detects via YOLO (requires ultralytics)."
     )
     parser.add_argument(
         "--sam-checkpoint",
@@ -214,6 +262,7 @@ def main():
     # Setup output directories
     # ------------------------------------------------------------------
     masks_dir = os.path.join(args.output, "mask_skateboard")
+    skater_masks_dir = os.path.join(args.output, "mask_skater")
     poses_dir = os.path.join(args.output, "pose_skater")
     json_dir = os.path.join(args.output, "pose_json")
     os.makedirs(args.output, exist_ok=True)
@@ -242,22 +291,33 @@ def main():
     print("[VRAM] Cleared after DWPose pass.")
 
     # ------------------------------------------------------------------
-    # Determine bounding box
+    # Determine bounding boxes (skateboard + skater)
     # ------------------------------------------------------------------
     if args.bbox:
-        user_bbox = parse_bbox_string(args.bbox)
+        skateboard_bbox = parse_bbox_string(args.bbox)
     else:
         # Auto-detect skateboard bbox (no GUI required)
         print("[INFO] No --bbox provided, attempting auto-detection...")
-        user_bbox = auto_detect_bbox(video_path)
-        if user_bbox is None:
+        skateboard_bbox = auto_detect_bbox(video_path)
+        if skateboard_bbox is None:
             print("[ERROR] Auto-detection failed. Please provide --bbox 'x1,y1,x2,y2'.")
             print("        Tip: Use the web UI (src/app.py) for interactive selection.")
             sys.exit(1)
-        print(f"[INFO] Auto-detected bbox: {user_bbox}")
+        print(f"[INFO] Auto-detected skateboard bbox: {skateboard_bbox}")
+
+    skater_bbox = None
+    if args.skater_bbox:
+        skater_bbox = parse_bbox_string(args.skater_bbox)
+    else:
+        # Auto-detect skater using YOLO
+        print("[INFO] No --skater-bbox provided, attempting YOLO auto-detection...")
+        skater_bbox = auto_detect_skater_bbox(video_path)
+        if skater_bbox is None:
+            print("[WARN] Skater auto-detection failed. Only skateboard will be tracked.")
+            print("       Provide --skater-bbox 'x1,y1,x2,y2' for dual-mask extraction.")
 
     # ------------------------------------------------------------------
-    # PASS 2: SAM 2.1 Mask Propagation
+    # PASS 2: SAM 2.1 Mask Propagation (multi-object)
     # ------------------------------------------------------------------
     print("\n" + "=" * 60)
     print("  PASS 2 / 2 : SAM 2.1 Object Mask Propagation")
@@ -271,8 +331,18 @@ def main():
         device=args.device,
     )
     tracker.init_video(video_path)
-    tracker.add_initial_prompt(frame_idx=0, bbox=user_bbox)
-    n_mask_frames = tracker.propagate_and_save(masks_dir)
+
+    # obj_id=1 → skateboard, obj_id=2 → skater
+    tracker.add_initial_prompt(frame_idx=0, bbox=skateboard_bbox, obj_id=1)
+    output_dirs = {1: masks_dir}
+
+    if skater_bbox is not None:
+        tracker.add_initial_prompt(frame_idx=0, bbox=skater_bbox, obj_id=2)
+        output_dirs[2] = skater_masks_dir
+
+    counts = tracker.propagate_and_save_multi(output_dirs)
+    n_mask_frames = counts.get(1, 0)
+    n_skater_mask_frames = counts.get(2, 0)
     tracker.cleanup()
 
     # ------------------------------------------------------------------
@@ -281,11 +351,14 @@ def main():
     metadata = {
         "source": args.video,          # original arg (may be URL)
         "video": os.path.abspath(video_path),
-        "bbox": user_bbox,
+        "skateboard_bbox": skateboard_bbox,
+        "skater_bbox": skater_bbox,
         "mask_frames": n_mask_frames,
+        "skater_mask_frames": n_skater_mask_frames,
         "pose_frames": n_pose_frames,
         "output_dir": os.path.abspath(args.output),
         "masks_dir": os.path.abspath(masks_dir),
+        "skater_masks_dir": os.path.abspath(skater_masks_dir),
         "poses_dir": os.path.abspath(poses_dir),
         "json_dir": os.path.abspath(json_dir),
     }
@@ -299,11 +372,16 @@ def main():
     print("\n" + "=" * 60)
     print("  EXTRACTION COMPLETE")
     print("=" * 60)
-    print(f"  Mask frames : {n_mask_frames}  -> {masks_dir}")
-    print(f"  Pose frames : {n_pose_frames}  -> {poses_dir}")
-    print(f"  Pose JSON   : {n_pose_frames}  -> {json_dir}")
-    print(f"  Metadata    : {meta_path}")
-    print(f"  BBox used   : {user_bbox}")
+    print(f"  Skateboard mask frames : {n_mask_frames}  -> {masks_dir}")
+    if skater_bbox is not None:
+        print(f"  Skater mask frames     : {n_skater_mask_frames}  -> {skater_masks_dir}")
+    else:
+        print(f"  Skater mask frames     : (not extracted — no skater bbox)")
+    print(f"  Pose frames            : {n_pose_frames}  -> {poses_dir}")
+    print(f"  Pose JSON              : {n_pose_frames}  -> {json_dir}")
+    print(f"  Metadata               : {meta_path}")
+    print(f"  Skateboard BBox        : {skateboard_bbox}")
+    print(f"  Skater BBox            : {skater_bbox}")
 
     if n_mask_frames != n_pose_frames:
         print(f"\n  [WARNING] Frame count mismatch! Masks={n_mask_frames}, Poses={n_pose_frames}")

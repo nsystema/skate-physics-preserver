@@ -32,6 +32,7 @@ import random
 import sys
 import uuid
 
+import cv2
 import requests
 import websocket
 
@@ -203,19 +204,22 @@ class ComfyOrchestrator:
         negative_prompt,
         output_dir,
         ref_image_path=None,
+        skater_masks_dir=None,
     ):
         """
         Execute the full V2V pipeline via ComfyUI API.
 
         Args:
-            workflow_path:     Path to template JSON.
-            source_video_path: Source MP4.
-            masks_dir:         Directory of mask PNGs.
-            poses_dir:         Directory of pose PNGs.
-            positive_prompt:   Text prompt for generation.
-            negative_prompt:   Negative prompt.
-            output_dir:        Where to copy the result.
-            ref_image_path:    Optional reference image for style guidance.
+            workflow_path:      Path to template JSON.
+            source_video_path:  Source MP4.
+            masks_dir:          Directory of skateboard mask PNGs.
+            poses_dir:          Directory of pose PNGs.
+            positive_prompt:    Text prompt for generation.
+            negative_prompt:    Negative prompt.
+            output_dir:         Where to copy the result.
+            ref_image_path:     Optional reference image for style guidance.
+            skater_masks_dir:   Directory of skater mask PNGs (optional but
+                                recommended — enables dual-mask inpainting).
         """
         # ----- Load workflow template -----
         with open(workflow_path, "r", encoding="utf-8") as f:
@@ -224,15 +228,36 @@ class ComfyOrchestrator:
         print(f"[WORKFLOW] Loaded template: {workflow_path}")
         self._notify("uploading", "Workflow loaded, uploading assets...", 0.05)
 
+        # ----- Read source video FPS for workflow sync -----
+        video_fps = 24.0  # safe default
+        try:
+            cap = cv2.VideoCapture(source_video_path)
+            if cap.isOpened():
+                video_fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
+            cap.release()
+            print(f"[VIDEO] Native FPS: {video_fps:.1f}")
+        except Exception:
+            print("[VIDEO] Could not read FPS, using default 24")
+
         # ----- Upload assets -----
         print("\n--- Uploading Assets ---")
         self._notify("uploading", "Uploading source video...", 0.08)
         vid_meta = upload_asset(self.server_addr, source_video_path)
 
-        self._notify("uploading", "Uploading mask sequence...", 0.15)
+        self._notify("uploading", "Uploading skateboard mask sequence...", 0.12)
         mask_subfolder, _ = upload_image_sequence(
             self.server_addr, masks_dir, "mask_skateboard"
         )
+
+        # Upload skater masks if available
+        skater_mask_subfolder = None
+        if skater_masks_dir and os.path.isdir(skater_masks_dir):
+            self._notify("uploading", "Uploading skater mask sequence...", 0.18)
+            skater_mask_subfolder, _ = upload_image_sequence(
+                self.server_addr, skater_masks_dir, "mask_skater"
+            )
+        else:
+            print("[WARN] No skater masks directory provided — skater will NOT be inpainted.")
 
         self._notify("uploading", "Uploading pose sequence...", 0.25)
         pose_subfolder, _ = upload_image_sequence(
@@ -254,6 +279,8 @@ class ComfyOrchestrator:
             pose_subfolder=pose_subfolder,
             positive_prompt=positive_prompt,
             negative_prompt=negative_prompt,
+            skater_mask_subfolder=skater_mask_subfolder,
+            video_fps=video_fps,
         )
 
         # ----- Connect WebSocket -----
@@ -287,31 +314,44 @@ class ComfyOrchestrator:
 
     def _inject_workflow(
         self, workflow, vid_meta, img_meta, mask_subfolder, pose_subfolder,
-        positive_prompt, negative_prompt
+        positive_prompt, negative_prompt,
+        skater_mask_subfolder=None, video_fps=24.0,
     ):
-        """Dynamically inject file paths and prompts into the workflow JSON."""
+        """Dynamically inject file paths, prompts, and FPS into the workflow JSON."""
 
         # --- Source Video Loader ---
         try:
             vid_node = find_node_safe(workflow, "VHS_LoadVideo", "Source Video")
             workflow[vid_node]["inputs"]["video"] = vid_meta["name"]
-            print(f"  [OK] Source video -> node {vid_node}")
+            # Sync force_rate to native FPS so frame count matches masks/poses
+            workflow[vid_node]["inputs"]["force_rate"] = round(video_fps, 2)
+            print(f"  [OK] Source video -> node {vid_node} (fps={video_fps:.1f})")
         except ValueError:
             print("  [SKIP] No VHS_LoadVideo node found")
 
-        # --- Mask Sequence Loader ---
-        try:
-            mask_node = find_node_safe(workflow, "VHS_LoadImages", "Mask Sequence")
-            workflow[mask_node]["inputs"]["directory"] = mask_subfolder
-            print(f"  [OK] Mask sequence -> node {mask_node}")
-        except ValueError:
-            # Try LoadImageSequence as alternative
+        # --- Skateboard Mask Sequence Loader ---
+        # Try new title first, fall back to legacy title
+        for title in ["Mask Sequence (Skateboard)", "Mask Sequence"]:
             try:
-                mask_node = find_node_safe(workflow, "LoadImageSequence", "Mask Sequence")
+                mask_node = find_node_safe(workflow, "VHS_LoadImages", title)
                 workflow[mask_node]["inputs"]["directory"] = mask_subfolder
-                print(f"  [OK] Mask sequence -> node {mask_node}")
+                print(f"  [OK] Skateboard mask sequence -> node {mask_node}")
+                break
             except ValueError:
-                print("  [SKIP] No mask loader node found")
+                continue
+        else:
+            print("  [SKIP] No skateboard mask loader node found")
+
+        # --- Skater Mask Sequence Loader ---
+        if skater_mask_subfolder:
+            try:
+                skater_mask_node = find_node_safe(
+                    workflow, "VHS_LoadImages", "Mask Sequence (Skater)"
+                )
+                workflow[skater_mask_node]["inputs"]["directory"] = skater_mask_subfolder
+                print(f"  [OK] Skater mask sequence -> node {skater_mask_node}")
+            except ValueError:
+                print("  [SKIP] No skater mask loader node found in workflow")
 
         # --- Pose Sequence Loader ---
         try:
@@ -349,6 +389,14 @@ class ComfyOrchestrator:
             print(f"  [OK] Negative prompt -> node {neg_node}")
         except ValueError:
             print("  [SKIP] No negative prompt node found")
+
+        # --- Output Video FPS ---
+        try:
+            out_node = find_node_safe(workflow, "VHS_VideoCombine", "Output Video")
+            workflow[out_node]["inputs"]["frame_rate"] = round(video_fps, 2)
+            print(f"  [OK] Output frame_rate -> node {out_node} ({video_fps:.1f}fps)")
+        except ValueError:
+            pass  # non-critical
 
         # --- Random Seed ---
         for sampler_class in ["KSampler", "WanVACESampler", "KSamplerAdvanced", "SamplerCustom"]:
@@ -490,7 +538,9 @@ def main():
         description="Generate reskinned video via headless ComfyUI"
     )
     parser.add_argument("--source-video", required=True, help="Source video path")
-    parser.add_argument("--masks-dir", required=True, help="Directory of mask PNGs")
+    parser.add_argument("--masks-dir", required=True, help="Directory of skateboard mask PNGs")
+    parser.add_argument("--skater-masks-dir", default=None,
+                        help="Directory of skater mask PNGs (enables dual-mask inpainting)")
     parser.add_argument("--poses-dir", required=True, help="Directory of pose PNGs")
     parser.add_argument(
         "--positive-prompt", "--prompt", required=True,
@@ -565,6 +615,7 @@ def main():
         negative_prompt=args.negative_prompt,
         output_dir=args.output_dir,
         ref_image_path=args.ref_image,
+        skater_masks_dir=args.skater_masks_dir,
     )
 
     print("\n" + "=" * 60)
