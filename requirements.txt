@@ -38,6 +38,12 @@ requests>=2.31.0
 # --- YouTube URL support ---
 yt-dlp>=2024.12.0
 
+# --- Object Detection (auto-detect skater + skateboard) ---
+ultralytics>=8.3.0
+
+# --- Web Validation UI ---
+flask>=3.0.0
+
 # --- Utilities ---
 tqdm>=4.67.0
 matplotlib>=3.9.0

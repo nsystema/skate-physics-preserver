@@ -136,22 +136,23 @@ class SkateboardTracker:
             offload_state_to_cpu=True,     # keep tracking state on CPU
         )
 
-    def add_initial_prompt(self, frame_idx, bbox):
+    def add_initial_prompt(self, frame_idx, bbox, obj_id=1):
         """
         Seed the tracker with a bounding box on a specific frame.
 
         Args:
             frame_idx: 0-indexed frame number
-            bbox:      [x1, y1, x2, y2] coordinates of the skateboard
+            bbox:      [x1, y1, x2, y2] coordinates of the object
+            obj_id:    Integer object ID (1=skateboard, 2=skater, etc.)
         """
         if self.inference_state is None:
             raise RuntimeError("Call init_video() before adding prompts.")
 
-        print(f"[SAM2] Adding box prompt on frame {frame_idx}: {bbox}")
+        print(f"[SAM2] Adding box prompt on frame {frame_idx} (obj {obj_id}): {bbox}")
         _, _out_obj_ids, out_mask_logits = self.predictor.add_new_points_or_box(
             inference_state=self.inference_state,
             frame_idx=frame_idx,
-            obj_id=1,
+            obj_id=obj_id,
             box=np.array(bbox, dtype=np.float32),
         )
         return out_mask_logits
@@ -205,6 +206,72 @@ class SkateboardTracker:
 
         print(f"[SAM2] Done. {saved} masks saved to {output_dir}")
         return saved
+
+    def propagate_and_save_multi(self, output_dirs, progress_callback=None):
+        """
+        Propagate masks for multiple tracked objects to separate directories.
+
+        This is the multi-object counterpart to ``propagate_and_save``.
+        Each object ID maps to its own output directory.
+
+        Args:
+            output_dirs:       dict mapping obj_id (int) to output dir path
+                               e.g. {1: "output/mask_skateboard", 2: "output/mask_skater"}
+            progress_callback: optional callable(fraction: float) where fraction
+                               is in [0, 1].  Called after each frame.
+
+        Returns:
+            dict mapping obj_id to number of frames saved.
+        """
+        if self.inference_state is None:
+            raise RuntimeError("Call init_video() and add_initial_prompt() first.")
+
+        h, w = self.video_info["height"], self.video_info["width"]
+        total = self.video_info["count"]
+
+        for d in output_dirs.values():
+            os.makedirs(d, exist_ok=True)
+
+        counts: dict[int, int] = {oid: 0 for oid in output_dirs}
+        frame_num = 0
+
+        print(f"[SAM2] Propagating {len(output_dirs)} object(s) across {total} frames ...")
+
+        for out_frame_idx, out_obj_ids, out_mask_logits in self.predictor.propagate_in_video(
+            self.inference_state
+        ):
+            obj_id_list = [int(o) for o in out_obj_ids]
+
+            for i, oid in enumerate(obj_id_list):
+                if oid not in output_dirs:
+                    continue
+
+                mask_logit = out_mask_logits[i]
+                mask_bool = (mask_logit > 0.0).cpu().numpy().squeeze()
+
+                final_mask = np.zeros((h, w), dtype=np.uint8)
+                if mask_bool.ndim == 2:
+                    if mask_bool.shape != (h, w):
+                        mask_uint8 = mask_bool.astype(np.uint8) * 255
+                        final_mask = cv2.resize(mask_uint8, (w, h),
+                                                interpolation=cv2.INTER_NEAREST)
+                    else:
+                        final_mask[mask_bool] = 255
+
+                filename = f"frame_{out_frame_idx:05d}.png"
+                cv2.imwrite(os.path.join(output_dirs[oid], filename), final_mask)
+                counts[oid] += 1
+
+            frame_num += 1
+            if progress_callback and total > 0:
+                progress_callback(frame_num / total)
+            if frame_num % 50 == 0:
+                print(f"  ... processed {frame_num}/{total} frames")
+
+        for oid, cnt in counts.items():
+            print(f"[SAM2] Object {oid}: {cnt} masks -> {output_dirs[oid]}")
+
+        return counts
 
     def propagate_yield(self):
         """

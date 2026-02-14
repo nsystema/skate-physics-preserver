@@ -2,7 +2,9 @@
 
 **Human-Object Relational Mapping for Video-to-Video Synthesis**
 
-A 100% local, headless pipeline that reskins dynamic human-object interactions (e.g., skateboard tricks) while enforcing strict frame-by-frame physical boundaries. No cloud APIs. No GUI.
+A 100% local pipeline that reskins dynamic human-object interactions (e.g., skateboard tricks) while enforcing strict frame-by-frame physical boundaries. No cloud APIs.
+
+Features automatic **YOLO + SAM 2.1** detection of both skater and skateboard, with a **local web UI** (`localhost:5000`) to validate segmentation masks before running the full pipeline. Also supports headless CLI mode.
 
 Optimized for **RTX 3070 8GB VRAM**.
 
@@ -11,39 +13,48 @@ Optimized for **RTX 3070 8GB VRAM**.
 ## Architecture
 
 ```
-input.mp4
+input.mp4  (or YouTube URL)
     |
     v
-+------------------------------+
-|  extract_physics.py          |
-|  +- Pass 1: DWPose (~1.5GB) |
-|  |  (skeleton extraction)    |
-|  |  > VRAM cleanup           |
-|  +- Pass 2: SAM 2.1 (~3GB)  |
-|     (object mask tracking)   |
-+------------------------------+
-    |                 |
-    v                 v
-pose_skater/    mask_skateboard/
-(PNG sequence)  (PNG sequence)
-    |                 |
-    v                 v
-+------------------------------+
-|  generate_reskin.py          |
-|  (ComfyUI headless API)     |
-|  Wan 2.1 VACE 1.3B GGUF     |
-+------------------------------+
++--------------------------------------+
+|  app.py  (Web UI on localhost:5000)  |
+|                                      |
+|  1. YOLO auto-detect skater +        |
+|     skateboard on frame 0            |
+|  2. SAM 2.1 segments both objects    |
+|  3. Browser preview for validation   |
+|  4. Approve → run full pipeline:     |
+|     +- Pass 1: DWPose (~1.5GB)      |
+|     |  (skeleton extraction)         |
+|     |  > VRAM cleanup                |
+|     +- Pass 2: SAM 2.1 (~3GB)       |
+|        (multi-object propagation)    |
++--------------------------------------+
+    |            |              |
+    v            v              v
+pose_skater/ mask_skateboard/ mask_skater/
+(PNG seq.)   (PNG seq.)       (PNG seq.)
+    |            |              |
+    v            v              v
++--------------------------------------+
+|  generate_reskin.py                  |
+|  (ComfyUI headless API)             |
+|  Wan 2.1 VACE 1.3B GGUF             |
++--------------------------------------+
     |
     v
 output.mp4
     |
     v
-+------------------------------+
-|  evaluate_iou.py             |
-|  (Reverse-tracking + IoU)    |
-|  Target: IoU > 0.90          |
-+------------------------------+
++--------------------------------------+
+|  evaluate_iou.py                     |
+|  (Reverse-tracking + IoU)            |
+|  Target: IoU > 0.90                  |
++--------------------------------------+
 ```
+
+> The CLI script `extract_physics.py` (manual `--bbox` mode) is still available
+> for headless/scripted workflows.
 
 ---
 
@@ -140,9 +151,34 @@ skate-physics-preserver/
     sam2.1_hiera_small.pt
 ```
 
-**Stage 1 -- Extract tracking data:**
+**Stage 1 -- Extract tracking data (Web UI — recommended):**
 
-*From a local file:*
+```bash
+docker compose run --rm -p 5000:5000 pipeline src/app.py \
+  --output /data/output \
+  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+```
+
+Open **http://localhost:5000** in your browser. The web UI lets you:
+
+1. **Upload** a video file or paste a YouTube URL
+2. **Auto-detect** — YOLO finds the skater + skateboard, SAM 2.1 segments them on frame 0
+3. **Validate** — review the coloured mask overlays (blue = skater, orange = skateboard)
+4. **Manual fallback** — if auto-detect misses something, click directly on the objects
+5. **Approve** — runs the full DWPose + SAM propagation pipeline automatically
+
+You can also pre-load a video:
+
+```bash
+docker compose run --rm -p 5000:5000 pipeline src/app.py \
+  --video /data/input/skate_clip.mp4 \
+  --output /data/output \
+  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
+```
+
+> YouTube URLs work too: `--video "https://www.youtube.com/watch?v=VIDEO_ID"`
+
+**Stage 1 -- Extract tracking data (headless CLI — for scripting):**
 
 ```bash
 docker compose run --rm pipeline src/extract_physics.py \
@@ -152,25 +188,14 @@ docker compose run --rm pipeline src/extract_physics.py \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 
-*From a YouTube URL:*
-
-```bash
-docker compose run --rm pipeline src/extract_physics.py \
-  --video "https://www.youtube.com/watch?v=VIDEO_ID" \
-  --output /data/output \
-  --bbox "120,340,280,410" \
-  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
-```
-
-> The video is auto-downloaded to `output/downloads/` via `yt-dlp` (max 1080p, mp4). Short URLs like `https://youtu.be/VIDEO_ID` and `/shorts/` links also work.
-
-> **How to get the bbox:** Open frame 0 in any image viewer and note the pixel coordinates of the skateboard's top-left (x1,y1) and bottom-right (x2,y2) corners. Format: `"x1,y1,x2,y2"`. Tip: use `ffmpeg -i input.mp4 -frames:v 1 frame0.png` to extract the first frame.
+> The `--bbox` flag is only needed in headless CLI mode. The web UI eliminates manual bounding boxes entirely.
 
 Output appears in `./output/` on your host:
 
 ```
 output/
-  mask_skateboard/     <- grayscale mask PNGs
+  mask_skateboard/     <- grayscale mask PNGs (skateboard)
+  mask_skater/         <- grayscale mask PNGs (skater)  [web UI only]
   pose_skater/         <- RGB skeleton PNGs
   pose_json/           <- per-frame keypoint JSON
   tracking_metadata.json
@@ -214,6 +239,10 @@ docker compose run --rm pipeline src/evaluate_iou.py \
 ```bash
 # Build image
 docker compose build
+
+# Launch web validation UI (recommended)
+docker compose run --rm -p 5000:5000 pipeline src/app.py --output /data/output \
+  --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 
 # Dependency check
 docker compose run --rm pipeline src/extract_physics.py --check
@@ -279,9 +308,13 @@ pip install onnxruntime-gpu==1.20.1
 
 # Install remaining dependencies
 pip install opencv-python==4.11.0.86 "av>=12.0.0" websocket-client requests tqdm matplotlib "numpy<2.0" hydra-core==1.3.2 yt-dlp
+
+# Install auto-detection + web UI dependencies
+pip install "ultralytics>=8.3.0" "flask>=3.0.0"
 ```
 
 > **Note:** Set `SAM2_BUILD_CUDA=0` on Windows if you don't have `nvcc` in PATH.
+> YOLOv8-nano weights (~6 MB) are auto-downloaded on first run.
 
 ### 2. Download Model Checkpoints
 
@@ -298,25 +331,45 @@ python src/extract_physics.py --check
 
 ### 4. Run the Pipeline
 
+**Web UI (recommended) -- auto-detects both skater and skateboard, no manual bbox:**
+
 ```bash
-# Extract tracking from a local file (interactive bbox selection)
+# Launch the web validation UI (opens http://localhost:5000)
+python src/app.py --output output/
+
+# Or pre-load a video
+python src/app.py --video input.mp4 --output output/
+
+# Or with a YouTube URL
+python src/app.py --video "https://www.youtube.com/watch?v=VIDEO_ID" --output output/
+```
+
+Upload your video, review the auto-detected masks, approve, and the full pipeline runs.
+
+**Headless CLI (for scripting) -- requires manual bbox:**
+
+```bash
+# Interactive bbox selection (opens OpenCV window)
 python src/extract_physics.py --video input.mp4 --output output/
 
-# Extract tracking from a local file (headless, provide bbox)
+# Headless with explicit bbox
 python src/extract_physics.py --video input.mp4 --output output/ --bbox "120,340,280,410"
+```
 
-# Extract tracking from a YouTube URL (auto-downloads to output/downloads/)
-python src/extract_physics.py --video "https://www.youtube.com/watch?v=VIDEO_ID" --output output/ --bbox "120,340,280,410"
+**Stage 2 -- Generate reskin (ComfyUI must be running):**
 
-# Generate reskin (ComfyUI must be running)
+```bash
 python src/generate_reskin.py \
   --source-video input.mp4 \
   --masks-dir output/mask_skateboard \
   --poses-dir output/pose_skater \
   --positive-prompt "cyberpunk samurai riding a neon hoverboard, cinematic" \
   --output-dir output/generated
+```
 
-# Validate IoU
+**Stage 3 -- Validate IoU:**
+
+```bash
 python src/evaluate_iou.py \
   --metadata output/tracking_metadata.json \
   --generated output/generated/output.mp4
@@ -407,12 +460,16 @@ skate-physics-preserver/
 +-- output/                       # (host-mounted) pipeline outputs
 +-- src/
 |   +-- __init__.py
-|   +-- extract_physics.py        # CLI: tracking orchestrator
+|   +-- app.py                    # Web UI: validation + pipeline launcher
+|   +-- auto_detect.py            # YOLO + SAM auto-detection module
+|   +-- extract_physics.py        # CLI: tracking orchestrator (headless)
 |   +-- generate_reskin.py        # CLI: ComfyUI headless client
 |   +-- evaluate_iou.py           # CLI: IoU validation
+|   +-- templates/
+|   |   +-- index.html            # Web UI single-page app
 |   +-- tracking/
 |       +-- __init__.py
-|       +-- skateboard_tracker.py # SAM 2.1 wrapper
+|       +-- skateboard_tracker.py # SAM 2.1 wrapper (multi-object)
 |       +-- skater_pose.py        # DWPose wrapper
 +-- workflows/
 |   +-- vace_template.json        # ComfyUI workflow template

@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skate Physics Preserver</title>
+<style>
+/* ================================================================
+   THEME & RESET
+   ================================================================ */
+:root {
+  --bg:         #07070d;
+  --surface:    #111122;
+  --surface-2:  #191930;
+  --surface-3:  #222240;
+  --border:     #2a2a48;
+  --text:       #e4e4f0;
+  --text-dim:   #7878a0;
+  --primary:    #6366f1;
+  --primary-h:  #818cf8;
+  --success:    #22c55e;
+  --warning:    #eab308;
+  --danger:     #ef4444;
+  --skater:     #3b82f6;
+  --skateboard: #f97316;
+  --radius:     12px;
+  --shadow:     0 4px 24px rgba(0,0,0,.45);
+}
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html { font-size:15px; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+a { color: var(--primary-h); text-decoration:none; }
+
+/* ================================================================
+   HEADER
+   ================================================================ */
+.header {
+  width: 100%;
+  padding: 28px 0 18px;
+  text-align: center;
+  background: linear-gradient(180deg, #0e0e1c 0%, var(--bg) 100%);
+  border-bottom: 1px solid var(--border);
+}
+.header h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+.header p {
+  color: var(--text-dim);
+  font-size: .85rem;
+  margin-top: 4px;
+}
+
+/* ================================================================
+   CONTAINER / STEP CARDS
+   ================================================================ */
+.container { width:100%; max-width:880px; padding:24px 16px 60px; }
+
+.step {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 32px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+  animation: fadeUp .35s ease;
+}
+.step.active { display: block; }
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(12px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+.step-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.step-desc {
+  color: var(--text-dim);
+  font-size: .85rem;
+  margin-bottom: 20px;
+  line-height: 1.45;
+}
+
+/* ================================================================
+   UPLOAD AREA
+   ================================================================ */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  margin-bottom: 16px;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--primary);
+  background: rgba(99,102,241,.06);
+}
+.upload-zone .icon { font-size: 2.4rem; margin-bottom: 8px; }
+.upload-zone p { color: var(--text-dim); font-size: .88rem; }
+
+.or-divider {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: .8rem;
+  margin: 14px 0;
+  position: relative;
+}
+.or-divider::before, .or-divider::after {
+  content:''; position:absolute; top:50%; width:calc(50% - 24px);
+  height:1px; background:var(--border);
+}
+.or-divider::before { left:0; }
+.or-divider::after  { right:0; }
+
+.url-row {
+  display: flex;
+  gap: 10px;
+}
+.url-row input {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: .9rem;
+  outline: none;
+  transition: border-color .2s;
+}
+.url-row input:focus { border-color: var(--primary); }
+.url-row input::placeholder { color: var(--text-dim); }
+
+/* ================================================================
+   BUTTONS
+   ================================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 22px;
+  border: none;
+  border-radius: 8px;
+  font-size: .9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .2s, transform .1s;
+  color: #fff;
+}
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity:.45; cursor:not-allowed; }
+.btn-primary   { background: var(--primary); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-h); }
+.btn-success   { background: var(--success); }
+.btn-success:hover:not(:disabled) { background: #16a34a; }
+.btn-warning   { background: var(--warning); color:#000; }
+.btn-warning:hover:not(:disabled) { background: #ca8a04; }
+.btn-danger    { background: var(--danger); }
+.btn-danger:hover:not(:disabled)  { background: #dc2626; }
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.btn-outline:hover:not(:disabled) { border-color: var(--primary); color:var(--primary-h); }
+
+.btn-row { display:flex; gap:10px; margin-top:20px; flex-wrap:wrap; }
+
+/* ================================================================
+   PREVIEW IMAGE
+   ================================================================ */
+.preview-wrap {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  margin-bottom: 16px;
+  line-height: 0;
+}
+.preview-wrap img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.preview-wrap.clickable { cursor: crosshair; }
+
+/* Detection legend */
+.legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-size: .82rem;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.legend-dot.skater     { background: var(--skater); }
+.legend-dot.skateboard { background: var(--skateboard); }
+
+/* Detection card list */
+.det-cards {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.det-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: .85rem;
+  min-width: 140px;
+}
+.det-card .label {
+  font-weight: 600;
+  text-transform: capitalize;
+  margin-bottom: 2px;
+}
+.det-card .conf { color: var(--text-dim); font-size:.8rem; }
+
+/* ================================================================
+   MANUAL MODE BANNER
+   ================================================================ */
+.manual-banner {
+  background: var(--surface-3);
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin-bottom: 16px;
+  font-size: .88rem;
+  display: none;
+}
+.manual-banner.active { display:block; }
+.manual-banner .step-num {
+  color: var(--primary-h);
+  font-weight: 700;
+}
+
+/* Click markers on image */
+.click-marker {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 0 8px rgba(0,0,0,.7);
+}
+
+/* ================================================================
+   PROGRESS BAR
+   ================================================================ */
+.progress-outer {
+  width: 100%;
+  height: 10px;
+  background: var(--surface-3);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 16px 0 12px;
+}
+.progress-inner {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--success));
+  border-radius: 6px;
+  width: 0%;
+  transition: width .4s ease;
+}
+
+.status-msg {
+  color: var(--text-dim);
+  font-size: .88rem;
+  min-height: 1.3em;
+}
+
+/* ================================================================
+   COMPLETION
+   ================================================================ */
+.complete-check {
+  font-size: 3rem;
+  color: var(--success);
+  text-align: center;
+  margin-bottom: 10px;
+}
+.output-list {
+  list-style: none;
+  margin-top: 12px;
+}
+.output-list li {
+  padding: 6px 0;
+  font-size: .88rem;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+.output-list li:last-child { border:none; }
+.output-list .label { color:var(--text); font-weight:600; }
+
+/* ================================================================
+   SPINNER
+   ================================================================ */
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255,255,255,.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ================================================================
+   ERROR TOAST
+   ================================================================ */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--danger);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: .88rem;
+  box-shadow: 0 6px 28px rgba(0,0,0,.5);
+  opacity: 0;
+  transition: opacity .3s, transform .3s;
+  z-index: 999;
+  max-width: 90%;
+  text-align: center;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <h1>Skate Physics Preserver</h1>
+  <p>Auto-detect &middot; Validate &middot; Extract</p>
+</div>
+
+<div class="container">
+
+  <!-- ========================================================
+       STEP 1 : Upload / load video
+       ======================================================== -->
+  <div id="step-upload" class="step active">
+    <div class="step-title">1 &mdash; Load Video</div>
+    <div class="step-desc">
+      Upload an .mp4 file or paste a YouTube URL.  The first frame will be
+      used for automatic skater + skateboard detection.
+    </div>
+
+    <div class="upload-zone" id="drop-zone">
+      <div class="icon">&#128249;</div>
+      <p>Drag &amp; drop a video here, or <strong>click to browse</strong></p>
+      <input type="file" id="file-input" accept="video/*" hidden>
+    </div>
+
+    <div class="or-divider">or</div>
+
+    <div class="url-row">
+      <input type="text" id="yt-url" placeholder="https://www.youtube.com/watch?v=...">
+      <button class="btn btn-primary" id="btn-load-url">Load URL</button>
+    </div>
+
+    <div id="upload-status" class="status-msg" style="margin-top:12px;"></div>
+  </div>
+
+  <!-- ========================================================
+       STEP 2 : Detection & validation
+       ======================================================== -->
+  <div id="step-detect" class="step">
+    <div class="step-title">2 &mdash; Validate Detections</div>
+    <div class="step-desc" id="detect-desc">
+      SAM 2.1 masks overlaid on frame 0.  Confirm both the <strong
+      style="color:var(--skater)">skater</strong> and
+      <strong style="color:var(--skateboard)">skateboard</strong>
+      are correctly segmented.
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot skater"></span> Skater</div>
+      <div class="legend-item"><span class="legend-dot skateboard"></span> Skateboard</div>
+    </div>
+
+    <div class="preview-wrap" id="preview-wrap">
+      <img id="preview-img" src="" alt="Detection preview">
+    </div>
+
+    <div id="det-cards" class="det-cards"></div>
+
+    <!-- manual mode -->
+    <div class="manual-banner" id="manual-banner">
+      <span class="step-num" id="manual-step-text">Step 1/2</span>
+      &mdash; <span id="manual-instruction">Click on the <strong>skater</strong> in the image above.</span>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-success" id="btn-approve">Approve &amp; Run Pipeline</button>
+      <button class="btn btn-warning" id="btn-manual">Manual Select</button>
+      <button class="btn btn-outline" id="btn-redetect">Re-detect</button>
+      <button class="btn btn-outline" id="btn-back-upload">Back</button>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       STEP 3 : Pipeline running
+       ======================================================== -->
+  <div id="step-pipeline" class="step">
+    <div class="step-title">3 &mdash; Running Pipeline</div>
+    <div class="step-desc">
+      Extracting DWPose skeletons and SAM 2.1 masks.  This may take a few
+      minutes depending on video length.
+    </div>
+
+    <div class="progress-outer">
+      <div class="progress-inner" id="prog-bar"></div>
+    </div>
+    <div class="status-msg" id="pipeline-msg">Initialising …</div>
+  </div>
+
+  <!-- ========================================================
+       STEP 4 : Complete
+       ======================================================== -->
+  <div id="step-complete" class="step">
+    <div class="complete-check">&#10003;</div>
+    <div class="step-title" style="text-align:center;">Extraction Complete</div>
+    <div class="step-desc" style="text-align:center;" id="complete-summary"></div>
+
+    <ul class="output-list" id="output-list"></ul>
+
+    <div class="btn-row" style="justify-content:center;">
+      <button class="btn btn-primary" id="btn-new">Process Another Video</button>
+    </div>
+  </div>
+
+</div><!-- /.container -->
+
+<!-- Error toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* =============================================================
+   GLOBALS
+   ============================================================= */
+const $ = (sel) => document.querySelector(sel);
+
+const steps = {
+  upload:   $('#step-upload'),
+  detect:   $('#step-detect'),
+  pipeline: $('#step-pipeline'),
+  complete: $('#step-complete'),
+};
+
+function showStep(name) {
+  Object.values(steps).forEach(s => s.classList.remove('active'));
+  steps[name].classList.add('active');
+  window.scrollTo({top: 0, behavior:'smooth'});
+}
+
+/* toast */
+let _toastTimer;
+function toast(msg, ms = 5000) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+/* =============================================================
+   STEP 1 — Upload
+   ============================================================= */
+const dropZone  = $('#drop-zone');
+const fileInput = $('#file-input');
+const ytInput   = $('#yt-url');
+const uploadSt  = $('#upload-status');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) loadFile(fileInput.files[0]);
+});
+$('#btn-load-url').addEventListener('click', () => {
+  const url = ytInput.value.trim();
+  if (!url) return;
+  loadUrl(url);
+});
+
+async function loadFile(file) {
+  uploadSt.innerHTML = '<span class="spinner"></span> Uploading & reading first frame …';
+  const fd = new FormData();
+  fd.append('video', file);
+  try {
+    const r = await fetch('/api/load', {method:'POST', body: fd});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Upload failed');
+    onVideoLoaded(j);
+  } catch(e) { toast(e.message); uploadSt.textContent = ''; }
+}
+
+async function loadUrl(url) {
+  uploadSt.innerHTML = '<span class="spinner"></span> Downloading video …';
+  const fd = new FormData();
+  fd.append('url', url);
+  try {
+    const r = await fetch('/api/load', {method:'POST', body: fd});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Load failed');
+    onVideoLoaded(j);
+  } catch(e) { toast(e.message); uploadSt.textContent = ''; }
+}
+
+function onVideoLoaded(data) {
+  uploadSt.textContent = '';
+  // Store frame for later
+  window._frameB64  = data.frame;
+  window._frameW    = data.width;
+  window._frameH    = data.height;
+  // Jump to auto-detect
+  runAutoDetect();
+}
+
+/* =============================================================
+   STEP 2 — Detection
+   ============================================================= */
+
+async function runAutoDetect() {
+  showStep('detect');
+  $('#preview-img').src = 'data:image/jpeg;base64,' + window._frameB64;
+  $('#det-cards').innerHTML = '';
+  $('#detect-desc').textContent = 'Running YOLO + SAM auto-detection …';
+  disableDetectBtns(true);
+
+  try {
+    const r = await fetch('/api/detect', {method:'POST'});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Detection failed');
+    onDetected(j);
+  } catch(e) {
+    toast(e.message);
+    $('#detect-desc').textContent = 'Detection failed. Try manual mode.';
+    disableDetectBtns(false);
+  }
+}
+
+function onDetected(data) {
+  // Update preview
+  if (data.overlay) {
+    $('#preview-img').src = 'data:image/jpeg;base64,' + data.overlay;
+  }
+  // Detection cards
+  const cards = $('#det-cards');
+  cards.innerHTML = '';
+  (data.detections || []).forEach(d => {
+    const c = document.createElement('div');
+    c.className = 'det-card';
+    c.innerHTML = `<div class="label" style="color:var(--${d.label})">${d.label}</div>
+                   <div class="conf">${(d.confidence*100).toFixed(1)}% confidence</div>
+                   <div class="conf">bbox: [${d.bbox.join(', ')}]</div>`;
+    cards.appendChild(c);
+  });
+  // Description
+  const desc = $('#detect-desc');
+  if (data.detections && data.detections.length >= 2) {
+    desc.innerHTML = 'Both <strong style="color:var(--skater)">skater</strong> and ' +
+      '<strong style="color:var(--skateboard)">skateboard</strong> detected. ' +
+      'Review the masks and approve to run the full pipeline.';
+  } else if (data.detections && data.detections.length === 1) {
+    const found = data.detections[0].label;
+    const missing = found === 'skater' ? 'skateboard' : 'skater';
+    desc.innerHTML = `Only <strong>${found}</strong> detected. ` +
+      `Use <em>Manual Select</em> to click on the <strong>${missing}</strong>.`;
+  } else {
+    desc.textContent = data.message || 'No objects detected. Use manual mode.';
+  }
+  disableDetectBtns(false);
+  exitManualMode();
+}
+
+function disableDetectBtns(disabled) {
+  ['#btn-approve','#btn-manual','#btn-redetect','#btn-back-upload'].forEach(s => {
+    $(s).disabled = disabled;
+  });
+}
+
+/* Approve */
+$('#btn-approve').addEventListener('click', async () => {
+  $('#btn-approve').disabled = true;
+  try {
+    const r = await fetch('/api/approve', {method:'POST'});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Could not start pipeline');
+    showStep('pipeline');
+    pollPipeline();
+  } catch(e) {
+    toast(e.message);
+    $('#btn-approve').disabled = false;
+  }
+});
+
+/* Re-detect */
+$('#btn-redetect').addEventListener('click', runAutoDetect);
+
+/* Back */
+$('#btn-back-upload').addEventListener('click', () => {
+  exitManualMode();
+  showStep('upload');
+});
+
+/* ----- Manual mode ----- */
+let manualMode   = false;
+let manualPoints = [];
+let manualStep   = 0;  // 0 = waiting for skater click, 1 = waiting for skateboard click
+
+const MANUAL_ORDER = ['skater', 'skateboard'];
+
+$('#btn-manual').addEventListener('click', () => {
+  enterManualMode();
+});
+
+function enterManualMode() {
+  manualMode = true;
+  manualStep = 0;
+  manualPoints = [];
+  clearMarkers();
+  // Show raw frame
+  $('#preview-img').src = 'data:image/jpeg;base64,' + window._frameB64;
+  $('#preview-wrap').classList.add('clickable');
+  $('#manual-banner').classList.add('active');
+  updateManualInstruction();
+  // Hide approve until both points placed
+  $('#btn-approve').disabled = true;
+  $('#btn-manual').textContent = 'Cancel Manual';
+  $('#btn-manual').onclick = exitManualMode;
+}
+
+function exitManualMode() {
+  manualMode = false;
+  manualPoints = [];
+  manualStep = 0;
+  clearMarkers();
+  $('#preview-wrap').classList.remove('clickable');
+  $('#manual-banner').classList.remove('active');
+  $('#btn-manual').textContent = 'Manual Select';
+  $('#btn-manual').onclick = () => enterManualMode();
+}
+
+function updateManualInstruction() {
+  const label = MANUAL_ORDER[manualStep];
+  const color = label === 'skater' ? 'var(--skater)' : 'var(--skateboard)';
+  $('#manual-step-text').textContent = `Step ${manualStep+1}/2`;
+  $('#manual-instruction').innerHTML =
+    `Click on the <strong style="color:${color}">${label}</strong> in the image above.`;
+}
+
+$('#preview-wrap').addEventListener('click', (e) => {
+  if (!manualMode) return;
+  if (manualStep >= 2) return;
+
+  const img  = $('#preview-img');
+  const rect = img.getBoundingClientRect();
+  const scX  = window._frameW / rect.width;
+  const scY  = window._frameH / rect.height;
+  const x    = Math.round((e.clientX - rect.left) * scX);
+  const y    = Math.round((e.clientY - rect.top)  * scY);
+  const label = MANUAL_ORDER[manualStep];
+
+  manualPoints.push({x, y, label});
+  addMarker(e.clientX - rect.left, e.clientY - rect.top, label);
+
+  manualStep++;
+  if (manualStep < 2) {
+    updateManualInstruction();
+  } else {
+    // Both points placed — send to backend
+    $('#manual-banner').classList.remove('active');
+    submitManualPoints();
+  }
+});
+
+function addMarker(px, py, label) {
+  const wrap = $('#preview-wrap');
+  const m = document.createElement('div');
+  m.className = 'click-marker';
+  m.style.left = px + 'px';
+  m.style.top  = py + 'px';
+  m.style.background = label === 'skater'
+    ? 'var(--skater)' : 'var(--skateboard)';
+  wrap.appendChild(m);
+}
+
+function clearMarkers() {
+  document.querySelectorAll('.click-marker').forEach(m => m.remove());
+}
+
+async function submitManualPoints() {
+  disableDetectBtns(true);
+  $('#detect-desc').textContent = 'Running SAM segmentation on your points …';
+  try {
+    const r = await fetch('/api/refine', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({points: manualPoints}),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Refinement failed');
+    exitManualMode();
+    onDetected(j);
+  } catch(e) {
+    toast(e.message);
+    disableDetectBtns(false);
+  }
+}
+
+/* =============================================================
+   STEP 3 — Pipeline progress
+   ============================================================= */
+let _pollTimer;
+function pollPipeline() {
+  clearInterval(_pollTimer);
+  _pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/status');
+      const j = await r.json();
+      $('#prog-bar').style.width = j.progress + '%';
+      $('#pipeline-msg').textContent = j.message || '';
+      if (j.status === 'complete') {
+        clearInterval(_pollTimer);
+        onPipelineComplete(j);
+      } else if (j.status === 'error') {
+        clearInterval(_pollTimer);
+        toast(j.error || 'Pipeline error');
+        $('#pipeline-msg').textContent = 'Error: ' + (j.error || 'Unknown');
+      }
+    } catch(e) { /* ignore transient fetch errors */ }
+  }, 1500);
+}
+
+/* =============================================================
+   STEP 4 — Complete
+   ============================================================= */
+function onPipelineComplete(data) {
+  showStep('complete');
+  $('#complete-summary').textContent = data.message || 'All outputs generated.';
+}
+
+$('#btn-new').addEventListener('click', () => {
+  // Reset
+  window._frameB64 = null;
+  fileInput.value = '';
+  ytInput.value = '';
+  showStep('upload');
+});
+
+/* =============================================================
+   INIT — check if video was pre-loaded via CLI
+   ============================================================= */
+(async () => {
+  try {
+    const r = await fetch('/api/state');
+    const j = await r.json();
+    if (j.has_video && j.status === 'idle') {
+      // Video was pre-loaded via --video CLI arg; trigger load
+      uploadSt.innerHTML = '<span class="spinner"></span> Reading pre-loaded video …';
+      const fd = new FormData();
+      const lr = await fetch('/api/load', {method:'POST', body: fd});
+      const lj = await lr.json();
+      if (lr.ok) onVideoLoaded(lj);
+      else uploadSt.textContent = '';
+    }
+  } catch(e) { /* server may not be ready yet */ }
+})();
+</script>
+
+</body>
+</html>
