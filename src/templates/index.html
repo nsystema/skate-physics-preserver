@@ -797,7 +797,7 @@ a { color: var(--primary-h); text-decoration: none; }
     <div class="or-divider">or</div>
 
     <div class="url-row">
-      <input type="text" id="yt-url" placeholder="https://www.youtube.com/watch?v=...">
+      <input type="text" id="yt-url" value="https://www.youtube.com/shorts/wPpXDBMk8-E" placeholder="https://www.youtube.com/watch?v=...">
       <button class="btn btn-primary" id="btn-load-url">Load URL</button>
     </div>
 
@@ -2270,8 +2270,10 @@ $('#btn-new').addEventListener('click', () => {
 });
 
 /* =============================================================
-   INIT — check if video was pre-loaded via CLI
+   INIT — check if video was pre-loaded via CLI, or auto-load default
    ============================================================= */
+const DEFAULT_VIDEO_URL = 'https://www.youtube.com/shorts/wPpXDBMk8-E';
+
 (async () => {
   try {
     const r = await fetch('/api/state');
@@ -2283,12 +2285,19 @@ $('#btn-new').addEventListener('click', () => {
     }
 
     if (j.has_video && j.status === 'idle') {
+      // Pre-loaded via CLI
       uploadSt.innerHTML = '<span class="spinner"></span> Reading pre-loaded video ...';
       const fd = new FormData();
       const lr = await fetch('/api/load', {method:'POST', body: fd});
       const lj = await lr.json();
       if (lr.ok) onVideoLoaded(lj, j.video_path || 'Pre-loaded video');
       else uploadSt.textContent = '';
+    } else if (j.status === 'idle' && !j.has_video) {
+      // No pre-loaded video — auto-load the default YouTube demo
+      const defaultUrl = $('#yt-url').value.trim() || DEFAULT_VIDEO_URL;
+      if (defaultUrl) {
+        loadUrl(defaultUrl);
+      }
     }
   } catch(e) { /* server may not be ready yet */ }
 })();

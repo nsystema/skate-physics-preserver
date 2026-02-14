@@ -87,15 +87,6 @@
       "title": "Pose Sequence"
     }
   },
-  "9": {
-    "class_type": "LoadImage",
-    "inputs": {
-      "image": "reference.png"
-    },
-    "_meta": {
-      "title": "Reference Image"
-    }
-  },
   "10": {
     "class_type": "ImageToMask",
     "inputs": {
@@ -110,32 +101,14 @@
     "class_type": "ImageCompositeMasked",
     "inputs": {
       "destination": ["6", 0],
-      "source": ["14", 0],
+      "source": ["8", 0],
       "x": 0,
       "y": 0,
       "resize_source": true,
       "mask": ["10", 0]
     },
     "_meta": {
-      "title": "White-Out Reference"
-    }
-  },
-  "12": {
-    "class_type": "KSampler",
-    "inputs": {
-      "model": ["1", 0],
-      "positive": ["4", 0],
-      "negative": ["5", 0],
-      "latent_image": ["13", 0],
-      "seed": 42,
-      "steps": 25,
-      "cfg": 6.0,
-      "sampler_name": "uni_pc",
-      "scheduler": "normal",
-      "denoise": 0.85
-    },
-    "_meta": {
-      "title": "VACE Sampler"
+      "title": "Pose-Guided Inpaint Reference"
     }
   },
   "13": {
@@ -145,19 +118,35 @@
       "vae": ["3", 0]
     },
     "_meta": {
-      "title": "Encode Latent"
+      "title": "Encode Pose-Guided Reference"
     }
   },
-  "14": {
-    "class_type": "EmptyImage",
+  "17": {
+    "class_type": "SetLatentNoiseMask",
     "inputs": {
-      "width": 832,
-      "height": 480,
-      "batch_size": 49,
-      "color": 16777215
+      "samples": ["13", 0],
+      "mask": ["10", 0]
     },
     "_meta": {
-      "title": "White Canvas"
+      "title": "Apply Inpaint Mask"
+    }
+  },
+  "12": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["1", 0],
+      "positive": ["4", 0],
+      "negative": ["5", 0],
+      "latent_image": ["17", 0],
+      "seed": 42,
+      "steps": 30,
+      "cfg": 5.0,
+      "sampler_name": "uni_pc",
+      "scheduler": "normal",
+      "denoise": 0.55
+    },
+    "_meta": {
+      "title": "VACE Sampler"
     }
   },
   "15": {
