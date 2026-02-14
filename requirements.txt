@@ -15,14 +15,14 @@ torchaudio==2.6.0
 # Set SAM2_BUILD_CUDA=0 if nvcc is unavailable (slower CPU fallback for memory attention)
 
 # --- Pose Estimation ---
-rtmlib==0.2.0
+rtmlib==0.0.15
 
 # --- ONNX Runtime GPU (DWPose inference engine) ---
 # Uninstall onnxruntime (CPU) first: pip uninstall -y onnxruntime
 onnxruntime-gpu==1.20.1
 
 # --- Video / Image I/O ---
-opencv-python==4.11.0.86
+opencv-python-headless==4.11.0.86
 av>=12.0.0
 
 # --- Numerical ---

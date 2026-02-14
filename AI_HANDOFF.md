@@ -288,7 +288,7 @@ pip install git+https://github.com/facebookresearch/sam2.git@main
 
 \# 4\. Install rtmlib and ONNX Runtime  
 \# We explicitly uninstall onnxruntime (CPU) to avoid conflicts with the GPU version.  
-pip install rtmlib==0.2.0  
+pip install rtmlib==0.0.15  
 pip uninstall \-y onnxruntime  
 pip install onnxruntime-gpu==1.20.1
 

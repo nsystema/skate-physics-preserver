@@ -12,8 +12,8 @@ Extracts:
 Runs passes SEQUENTIALLY with full VRAM cleanup between them
 so the entire pipeline fits in 8 GB VRAM (RTX 3070).
 
-Interactive mode (default): Opens a window to draw bounding box.
-Headless mode:              Pass --bbox "x1,y1,x2,y2" on CLI.
+Provide --bbox "x1,y1,x2,y2" or let the script auto-detect.
+For interactive selection, use the web UI (src/app.py) instead.
 """
 
 import argparse
@@ -96,34 +96,6 @@ def download_youtube_video(url: str, output_dir: str) -> str:
 # Bounding box helpers
 # ---------------------------------------------------------------------------
 
-def get_user_box_interactive(video_path):
-    """Open first frame and let the user draw a ROI around the skateboard."""
-    cap = cv2.VideoCapture(video_path)
-    ret, frame = cap.read()
-    cap.release()
-
-    if not ret:
-        print("[ERROR] Cannot read first frame for ROI selection.")
-        sys.exit(1)
-
-    print("\n" + "=" * 60)
-    print("  Draw a box around the SKATEBOARD in the pop-up window.")
-    print("  Press SPACE or ENTER to confirm. Press C to cancel.")
-    print("=" * 60 + "\n")
-
-    roi = cv2.selectROI("Select Skateboard", frame, showCrosshair=True, fromCenter=False)
-    cv2.destroyAllWindows()
-
-    if roi == (0, 0, 0, 0):
-        print("[ERROR] No selection made. Exiting.")
-        sys.exit(1)
-
-    x, y, w, h = roi
-    bbox = [int(x), int(y), int(x + w), int(y + h)]
-    print(f"[INFO] Selected bbox: {bbox}")
-    return bbox
-
-
 def parse_bbox_string(bbox_str):
     """Parse 'x1,y1,x2,y2' string into [x1, y1, x2, y2] list of ints."""
     parts = [int(v.strip()) for v in bbox_str.split(",")]
@@ -171,13 +143,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Extract tracking data (masks + poses) for ComfyUI V2V pipeline"
     )
-    parser.add_argument("--video", "-i", required=True,
+    parser.add_argument("--video", "-i", default=None,
                         help="Input video path or YouTube URL")
-    parser.add_argument("--output", "-o", required=True, help="Output folder base")
+    parser.add_argument("--output", "-o", default=None, help="Output folder base")
     parser.add_argument(
         "--bbox", type=str, default=None,
-        help="Skateboard bounding box as 'x1,y1,x2,y2' (headless mode). "
-             "If omitted, opens interactive selector."
+        help="Skateboard bounding box as 'x1,y1,x2,y2'. "
+             "If omitted, attempts contour-based auto-detection."
     )
     parser.add_argument(
         "--sam-checkpoint",
@@ -203,10 +175,18 @@ def main():
     args = parser.parse_args()
 
     # ------------------------------------------------------------------
-    # Dependency check mode
+    # Dependency check mode (no --video/--output required)
     # ------------------------------------------------------------------
     if args.check:
         return run_dependency_check(args.device)
+
+    # ------------------------------------------------------------------
+    # Validate required args (after --check so it can run standalone)
+    # ------------------------------------------------------------------
+    if not args.video:
+        parser.error("--video/-i is required (unless using --check)")
+    if not args.output:
+        parser.error("--output/-o is required (unless using --check)")
 
     # ------------------------------------------------------------------
     # Resolve YouTube URLs → local file
@@ -260,7 +240,14 @@ def main():
     if args.bbox:
         user_bbox = parse_bbox_string(args.bbox)
     else:
-        user_bbox = get_user_box_interactive(video_path)
+        # Auto-detect skateboard bbox (no GUI required)
+        print("[INFO] No --bbox provided, attempting auto-detection...")
+        user_bbox = auto_detect_bbox(video_path)
+        if user_bbox is None:
+            print("[ERROR] Auto-detection failed. Please provide --bbox 'x1,y1,x2,y2'.")
+            print("        Tip: Use the web UI (src/app.py) for interactive selection.")
+            sys.exit(1)
+        print(f"[INFO] Auto-detected bbox: {user_bbox}")
 
     # ------------------------------------------------------------------
     # PASS 2: SAM 2.1 Mask Propagation
@@ -361,7 +348,7 @@ def run_dependency_check(device):
         importlib.import_module("rtmlib")
         print("  [OK] rtmlib (DWPose)")
     except ImportError:
-        print("  [FAIL] rtmlib not installed (pip install rtmlib==0.2.0)")
+        print("  [FAIL] rtmlib not installed (pip install rtmlib==0.0.15)")
         ok = False
 
     # ONNX Runtime

@@ -4,7 +4,7 @@
 
 A 100% local pipeline that reskins dynamic human-object interactions (e.g., skateboard tricks) while enforcing strict frame-by-frame physical boundaries. No cloud APIs.
 
-Features automatic **YOLO + SAM 2.1** detection of both skater and skateboard, with a **local web UI** (`localhost:5000`) to validate segmentation masks before running the full pipeline. Also supports headless CLI mode.
+Features automatic **YOLO + SAM 2.1** detection of both skater and skateboard, with a **local web UI** (`localhost:5000`) to validate segmentation masks before running the full pipeline. A headless CLI (`extract_physics.py`) is also available for scripted workflows.
 
 Optimized for **RTX 3070 8GB VRAM**.
 
@@ -53,8 +53,8 @@ output.mp4
 +--------------------------------------+
 ```
 
-> The CLI script `extract_physics.py` (manual `--bbox` mode) is still available
-> for headless/scripted workflows.
+> The CLI script `extract_physics.py` supports `--bbox` for explicit coordinates
+> or auto-detection when omitted. No GUI or display required.
 
 ---
 
@@ -188,7 +188,7 @@ docker compose run --rm pipeline src/extract_physics.py \
   --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 
-> The `--bbox` flag is only needed in headless CLI mode. The web UI eliminates manual bounding boxes entirely.
+> In CLI mode, `--bbox` is optional — if omitted, the script attempts contour-based auto-detection. The web UI uses YOLO for more reliable detection.
 
 Output appears in `./output/` on your host:
 
@@ -302,7 +302,7 @@ set SAM2_BUILD_CUDA=0
 pip install git+https://github.com/facebookresearch/sam2.git@main
 
 # Install rtmlib + ONNX Runtime GPU
-pip install rtmlib==0.2.0
+pip install rtmlib==0.0.15
 pip uninstall -y onnxruntime
 pip install onnxruntime-gpu==1.20.1
 
@@ -346,14 +346,14 @@ python src/app.py --video "https://www.youtube.com/watch?v=VIDEO_ID" --output ou
 
 Upload your video, review the auto-detected masks, approve, and the full pipeline runs.
 
-**Headless CLI (for scripting) -- requires manual bbox:**
+**Headless CLI (for scripting):**
 
 ```bash
-# Interactive bbox selection (opens OpenCV window)
-python src/extract_physics.py --video input.mp4 --output output/
-
-# Headless with explicit bbox
+# With explicit bbox
 python src/extract_physics.py --video input.mp4 --output output/ --bbox "120,340,280,410"
+
+# Auto-detect bbox (contour-based fallback)
+python src/extract_physics.py --video input.mp4 --output output/
 ```
 
 **Stage 2 -- Generate reskin (ComfyUI must be running):**
