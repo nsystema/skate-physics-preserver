@@ -158,6 +158,7 @@ class ComfyOrchestrator:
         self.server_addr = server_addr
         self.client_id = str(uuid.uuid4())
         self.ws = None
+        self.progress_callback = None  # Optional: callback(event, detail, pct)
 
     def connect(self):
         """Establish WebSocket connection to ComfyUI server."""
@@ -183,6 +184,14 @@ class ComfyOrchestrator:
         except (requests.ConnectionError, requests.Timeout):
             pass
         return False
+
+    def _notify(self, event, detail="", pct=0.0):
+        """Call progress_callback if set. Events: uploading|injecting|generating|retrieving|complete"""
+        if self.progress_callback:
+            try:
+                self.progress_callback(event, detail, pct)
+            except Exception:
+                pass
 
     def execute_v2v(
         self,
@@ -213,14 +222,19 @@ class ComfyOrchestrator:
             workflow = json.load(f)
 
         print(f"[WORKFLOW] Loaded template: {workflow_path}")
+        self._notify("uploading", "Workflow loaded, uploading assets...", 0.05)
 
         # ----- Upload assets -----
         print("\n--- Uploading Assets ---")
+        self._notify("uploading", "Uploading source video...", 0.08)
         vid_meta = upload_asset(self.server_addr, source_video_path)
 
+        self._notify("uploading", "Uploading mask sequence...", 0.15)
         mask_subfolder, _ = upload_image_sequence(
             self.server_addr, masks_dir, "mask_skateboard"
         )
+
+        self._notify("uploading", "Uploading pose sequence...", 0.25)
         pose_subfolder, _ = upload_image_sequence(
             self.server_addr, poses_dir, "pose_skater"
         )
@@ -231,6 +245,7 @@ class ComfyOrchestrator:
 
         # ----- Inject values into workflow -----
         print("\n--- Injecting Parameters ---")
+        self._notify("injecting", "Configuring workflow parameters", 0.32)
         self._inject_workflow(
             workflow,
             vid_meta=vid_meta,
@@ -242,12 +257,14 @@ class ComfyOrchestrator:
         )
 
         # ----- Connect WebSocket -----
+        self._notify("generating", "Connecting to ComfyUI...", 0.35)
         self.connect()
 
         # ----- Queue job -----
         print("\n--- Submitting Job ---")
         prompt_id = self._queue_prompt(workflow)
         print(f"[JOB] Queued with prompt_id: {prompt_id}")
+        self._notify("generating", "Job queued, generating...", 0.38)
 
         # ----- Monitor -----
         print("\n--- Monitoring Generation ---")
@@ -255,11 +272,13 @@ class ComfyOrchestrator:
 
         # ----- Retrieve output -----
         print("\n--- Retrieving Output ---")
+        self._notify("retrieving", "Generation done, retrieving output...", 0.92)
         output_filename = self._retrieve_output(prompt_id, output_dir)
 
         if self.ws:
             self.ws.close()
 
+        self._notify("complete", str(output_filename or "Done"), 1.0)
         return output_filename
 
     # ------------------------------------------------------------------
@@ -379,6 +398,7 @@ class ComfyOrchestrator:
                     if maximum > 0:
                         pct = value / maximum * 100
                         print(f"  [PROGRESS] {value}/{maximum} ({pct:.0f}%)", end="\r")
+                        self._notify("generating", f"Step {value}/{maximum} ({pct:.0f}%)", 0.38 + (value / maximum) * 0.54)
 
                 elif msg_type == "executing":
                     node = data.get("node", "")

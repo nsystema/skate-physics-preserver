@@ -70,7 +70,7 @@ a { color: var(--primary-h); text-decoration: none; }
    ================================================================ */
 .stepper-wrap {
   width: 100%;
-  max-width: 560px;
+  max-width: 720px;
   margin: 20px auto 0;
   padding: 0 16px;
 }
@@ -405,6 +405,101 @@ a { color: var(--primary-h); text-decoration: none; }
 }
 
 /* ================================================================
+   FORM ELEMENTS  (Generate / Validate)
+   ================================================================ */
+.form-group { margin-bottom: 18px; }
+.form-label {
+  display: block;
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.form-textarea, .form-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: .88rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color .2s;
+  resize: vertical;
+}
+.form-textarea:focus, .form-input:focus { border-color: var(--primary); }
+.form-textarea::placeholder, .form-input::placeholder { color: var(--text-muted); }
+
+.server-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .82rem;
+  padding: 4px 12px;
+  border-radius: 20px;
+}
+.server-status.ok {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid rgba(34,197,94,.2);
+}
+.server-status.err {
+  background: rgba(239,68,68,.08);
+  color: var(--danger);
+  border: 1px solid rgba(239,68,68,.2);
+}
+
+/* ================================================================
+   IoU BADGE & CHART
+   ================================================================ */
+.section-heading {
+  font-size: .92rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.iou-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.iou-badge.pass {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid rgba(34,197,94,.3);
+}
+.iou-badge.fail {
+  background: rgba(239,68,68,.08);
+  color: var(--danger);
+  border: 1px solid rgba(239,68,68,.3);
+}
+
+.iou-chart-wrap {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-top: 16px;
+  overflow-x: auto;
+}
+.iou-chart-wrap canvas {
+  width: 100%;
+  height: 160px;
+  display: block;
+}
+
+/* ================================================================
    RESULTS — COMPARISON VIEWER  (side-by-side)
    ================================================================ */
 .results-header {
@@ -488,6 +583,11 @@ a { color: var(--primary-h); text-decoration: none; }
 }
 .comp-panel-body img,
 .comp-panel-body canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.comp-panel-body video {
   width: 100%;
   height: auto;
   display: block;
@@ -635,11 +735,11 @@ a { color: var(--primary-h); text-decoration: none; }
 <body>
 
 <!-- ============================================================
-     HEADER + STEPPER
+     HEADER + STEPPER (6 steps)
      ============================================================ -->
 <div class="header">
   <h1>Skate Physics Preserver</h1>
-  <p>Auto-detect &middot; Validate &middot; Extract &middot; Compare</p>
+  <p>Upload &middot; Detect &middot; Extract &middot; Generate &middot; Validate &middot; Results</p>
 
   <div class="stepper-wrap">
     <div class="stepper" id="stepper">
@@ -657,6 +757,14 @@ a { color: var(--primary-h); text-decoration: none; }
       </div>
       <div class="stepper-step" data-idx="3">
         <div class="stepper-circle" id="sc-3">4</div>
+        <div class="stepper-label">Generate</div>
+      </div>
+      <div class="stepper-step" data-idx="4">
+        <div class="stepper-circle" id="sc-4">5</div>
+        <div class="stepper-label">Validate</div>
+      </div>
+      <div class="stepper-step" data-idx="5">
+        <div class="stepper-circle" id="sc-5">6</div>
         <div class="stepper-label">Results</div>
       </div>
     </div>
@@ -734,7 +842,7 @@ a { color: var(--primary-h); text-decoration: none; }
   </div>
 
   <!-- ========================================================
-       STEP 3 : Pipeline running  (enhanced with sub-steps)
+       STEP 3 : Pipeline running  (Stage 1 extraction)
        ======================================================== -->
   <div id="step-pipeline" class="step">
     <div class="step-title">Extracting Physics</div>
@@ -754,14 +862,120 @@ a { color: var(--primary-h); text-decoration: none; }
   </div>
 
   <!-- ========================================================
-       STEP 4 : Results — Side-by-side comparison viewer
+       STEP 4 : Generate Reskin  (Stage 2)
+       ======================================================== -->
+  <div id="step-generate" class="step">
+    <div class="step-title">Generate Reskin</div>
+    <div class="step-desc">
+      Extraction complete. Enter your creative prompt and generate a reskinned video via ComfyUI.
+    </div>
+
+    <!-- Extraction summary cards -->
+    <div class="summary-grid" id="gen-summary-grid" style="margin-bottom:24px;"></div>
+
+    <!-- ComfyUI Server -->
+    <div class="form-group">
+      <label class="form-label">ComfyUI Server Address</label>
+      <div class="url-row">
+        <input type="text" id="comfyui-server" value="127.0.0.1:8188" placeholder="127.0.0.1:8188">
+        <button class="btn btn-outline btn-sm" id="btn-check-comfyui">Check Connection</button>
+      </div>
+      <div id="comfyui-status" class="status-msg" style="margin-top:6px;"></div>
+    </div>
+
+    <!-- Positive Prompt -->
+    <div class="form-group">
+      <label class="form-label">Positive Prompt</label>
+      <textarea id="positive-prompt" class="form-textarea" rows="3"
+        placeholder="e.g. cyberpunk samurai riding a neon hoverboard, cinematic lighting"></textarea>
+    </div>
+
+    <!-- Negative Prompt -->
+    <div class="form-group">
+      <label class="form-label">Negative Prompt</label>
+      <textarea id="negative-prompt" class="form-textarea" rows="2">blurry, distorted, deformed, low quality</textarea>
+    </div>
+
+    <!-- Generation Progress (hidden until running) -->
+    <div id="gen-progress-wrap" style="display:none;">
+      <div class="progress-pct" id="gen-prog-pct">0%</div>
+      <div class="progress-outer">
+        <div class="progress-inner" id="gen-prog-bar"></div>
+      </div>
+      <ul class="sub-steps" id="gen-sub-steps"></ul>
+      <div class="status-msg" id="gen-msg">Starting generation...</div>
+    </div>
+
+    <div class="btn-row" id="gen-btn-row">
+      <button class="btn btn-primary" id="btn-generate">Generate Reskin</button>
+      <button class="btn btn-outline" id="btn-skip-generate">Skip to Results</button>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       STEP 5 : Validate IoU  (Stage 3)
+       ======================================================== -->
+  <div id="step-validate" class="step">
+    <div class="step-title">Validate Physics Preservation</div>
+    <div class="step-desc">
+      Re-track the generated object in the output video with SAM 2.1, then measure
+      frame-by-frame IoU against original masks. Target: IoU &ge; 0.90 on all frames.
+    </div>
+
+    <!-- Config -->
+    <div class="form-group">
+      <label class="form-label">IoU Threshold</label>
+      <input type="number" id="iou-threshold" class="form-input" value="0.90"
+             step="0.01" min="0" max="1" style="width:120px;">
+    </div>
+
+    <!-- Generated video info / upload -->
+    <div class="form-group">
+      <label class="form-label">Generated Video</label>
+      <div id="val-video-name" class="status-msg" style="margin-bottom:6px;"></div>
+      <label class="btn btn-outline btn-sm" style="cursor:pointer;">
+        Upload Different Video
+        <input type="file" id="val-video-input" accept="video/*" hidden>
+      </label>
+    </div>
+
+    <!-- Validation Progress (hidden until running) -->
+    <div id="val-progress-wrap" style="display:none;">
+      <div class="progress-pct" id="val-prog-pct">0%</div>
+      <div class="progress-outer">
+        <div class="progress-inner" id="val-prog-bar"></div>
+      </div>
+      <ul class="sub-steps" id="val-sub-steps"></ul>
+      <div class="status-msg" id="val-msg">Starting validation...</div>
+    </div>
+
+    <!-- IoU Results (shown when complete) -->
+    <div id="val-results-wrap" style="display:none;">
+      <div style="margin:16px 0;">
+        <span class="iou-badge" id="val-iou-badge">PENDING</span>
+      </div>
+      <div class="summary-grid" id="val-iou-grid"></div>
+      <div class="iou-chart-wrap">
+        <canvas id="val-iou-chart"></canvas>
+      </div>
+    </div>
+
+    <div class="btn-row" id="val-btn-row">
+      <button class="btn btn-success" id="btn-validate">Run Validation</button>
+      <button class="btn btn-outline" id="btn-back-generate">Back</button>
+      <button class="btn btn-outline" id="btn-skip-validate">Skip to Results</button>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       STEP 6 : Results — full view
        ======================================================== -->
   <div id="step-results" class="step">
     <div class="results-header">
       <div>
         <div class="step-title">Results</div>
         <div class="step-desc" style="margin-bottom:0;" id="results-summary-text">
-          Pipeline complete. Use the comparison viewer to inspect outputs frame-by-frame.
+          Pipeline complete. Use the viewers below to inspect outputs.
         </div>
       </div>
       <div class="results-badge" id="results-badge">
@@ -770,7 +984,39 @@ a { color: var(--primary-h); text-decoration: none; }
       </div>
     </div>
 
-    <!-- Comparison panels -->
+    <!-- IoU Report (shown if validation was run) -->
+    <div id="results-iou-section" style="display:none;">
+      <div class="section-heading">IoU Validation Report</div>
+      <div style="margin-bottom:12px;">
+        <span class="iou-badge" id="results-iou-badge">PENDING</span>
+      </div>
+      <div class="summary-grid" id="results-iou-grid"></div>
+      <div class="iou-chart-wrap">
+        <canvas id="results-iou-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Generated Video Comparison (shown if generation was done) -->
+    <div id="results-gen-section" style="display:none;">
+      <div class="section-heading">Original vs Generated</div>
+      <div class="comparison">
+        <div class="comp-panel">
+          <div class="comp-panel-head"><span class="comp-panel-title">Original</span></div>
+          <div class="comp-panel-body">
+            <video id="results-orig-video" controls muted></video>
+          </div>
+        </div>
+        <div class="comp-panel">
+          <div class="comp-panel-head"><span class="comp-panel-title">Generated</span></div>
+          <div class="comp-panel-body">
+            <video id="results-gen-video" controls muted></video>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Frame Analysis (extraction outputs) -->
+    <div class="section-heading">Frame Analysis</div>
     <div class="comparison">
       <div class="comp-panel">
         <div class="comp-panel-head">
@@ -818,14 +1064,16 @@ a { color: var(--primary-h); text-decoration: none; }
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-/* ---- Stepper management ---- */
-const STEP_NAMES = ['upload', 'detect', 'pipeline', 'results'];
+/* ---- Stepper management (6 steps) ---- */
+const STEP_NAMES = ['upload', 'detect', 'pipeline', 'generate', 'validate', 'results'];
 let currentStepIdx = 0;
 
 const stepEls = {
   upload:   $('#step-upload'),
   detect:   $('#step-detect'),
   pipeline: $('#step-pipeline'),
+  generate: $('#step-generate'),
+  validate: $('#step-validate'),
   results:  $('#step-results'),
 };
 
@@ -855,12 +1103,10 @@ function updateStepper() {
       circle.textContent = i + 1;
     }
   });
-  // Position connecting lines
   positionStepperLines();
 }
 
 function positionStepperLines() {
-  // Remove old lines
   $$('.stepper-line').forEach(l => l.remove());
   const steps = $$('#stepper .stepper-step');
   const stepper = $('#stepper');
@@ -948,7 +1194,6 @@ function onVideoLoaded(data, displayName) {
   window._frameCount = data.frame_count || 0;
   window._duration   = data.duration || 0;
 
-  // Show video info badge
   const vi = $('#video-info');
   vi.classList.add('show');
   $('#vi-name').textContent = displayName || 'video';
@@ -1141,12 +1386,12 @@ async function submitManualPoints() {
 }
 
 /* =============================================================
-   STEP 3 — Pipeline progress (with sub-steps)
+   STEP 3 — Pipeline progress (Stage 1 extraction)
    ============================================================= */
 let _pollTimer;
 
-function renderSubSteps(subSteps) {
-  const ul = $('#sub-steps');
+function renderSubSteps(subSteps, targetEl) {
+  const ul = targetEl || $('#sub-steps');
   ul.innerHTML = '';
   if (!subSteps || !subSteps.length) return;
 
@@ -1179,7 +1424,7 @@ function pollPipeline() {
       $('#prog-bar').style.width = j.progress + '%';
       $('#prog-pct').textContent = j.progress + '%';
       $('#pipeline-msg').textContent = j.message || '';
-      renderSubSteps(j.sub_steps);
+      renderSubSteps(j.sub_steps, $('#sub-steps'));
 
       if (j.status === 'complete') {
         clearInterval(_pollTimer);
@@ -1194,7 +1439,7 @@ function pollPipeline() {
 }
 
 /* =============================================================
-   STEP 4 — Results + comparison viewer
+   Pipeline complete → transition to Generate step
    ============================================================= */
 let compState = {
   outputs: {},
@@ -1209,9 +1454,7 @@ let compState = {
 };
 
 async function onPipelineComplete(statusData) {
-  showStep('results');
-
-  // Fetch detailed output info
+  // Fetch detailed output info and store in compState
   try {
     const r = await fetch('/api/outputs/info');
     const info = await r.json();
@@ -1225,24 +1468,443 @@ async function onPipelineComplete(statusData) {
     compState.duration = statusData.duration || 0;
   }
 
+  // Build extraction summary in the Generate step
+  buildGenSummary(statusData);
+
+  // Go to Generate step
+  showStep('generate');
+}
+
+function buildGenSummary(data) {
+  const grid = $('#gen-summary-grid');
+  grid.innerHTML = '';
+  const cards = [
+    {label: 'Frames Extracted', value: compState.frameCount, detail: `${compState.fps.toFixed(1)} fps`},
+    {label: 'Duration', value: compState.duration.toFixed(1) + 's', detail: ''},
+  ];
+  if (compState.outputs['pose_skater']) {
+    cards.push({label: 'Pose Frames', value: compState.outputs['pose_skater'].count, detail: 'pose_skater/'});
+  }
+  if (compState.outputs['mask_skateboard']) {
+    cards.push({label: 'Board Masks', value: compState.outputs['mask_skateboard'].count, detail: 'mask_skateboard/'});
+  }
+  if (compState.outputs['mask_skater']) {
+    cards.push({label: 'Skater Masks', value: compState.outputs['mask_skater'].count, detail: 'mask_skater/'});
+  }
+  cards.forEach(c => {
+    const div = document.createElement('div');
+    div.className = 'summary-card';
+    div.innerHTML = `
+      <div class="sc-label">${c.label}</div>
+      <div class="sc-value">${c.value}</div>
+      ${c.detail ? '<div class="sc-detail">' + c.detail + '</div>' : ''}
+    `;
+    grid.appendChild(div);
+  });
+}
+
+/* =============================================================
+   STEP 4 — Generate Reskin  (Stage 2)
+   ============================================================= */
+
+$('#btn-check-comfyui').addEventListener('click', checkComfyUI);
+$('#btn-generate').addEventListener('click', startGeneration);
+$('#btn-skip-generate').addEventListener('click', () => {
+  showStep('results');
+  showResults();
+});
+
+async function checkComfyUI() {
+  const server = $('#comfyui-server').value.trim();
+  if (!server) return;
+  const statusEl = $('#comfyui-status');
+  statusEl.innerHTML = '<span class="spinner spinner-sm"></span> Checking...';
+
+  try {
+    const r = await fetch('/api/comfyui/check', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({server}),
+    });
+    const j = await r.json();
+    if (j.status === 'ok') {
+      statusEl.innerHTML = '<span class="server-status ok">Connected</span>';
+    } else {
+      statusEl.innerHTML = '<span class="server-status err">Not reachable — ' + (j.message || '') + '</span>';
+    }
+  } catch(e) {
+    statusEl.innerHTML = '<span class="server-status err">Error: ' + e.message + '</span>';
+  }
+}
+
+async function startGeneration() {
+  const positivePrompt = $('#positive-prompt').value.trim();
+  const negativePrompt = $('#negative-prompt').value.trim();
+  const server = $('#comfyui-server').value.trim();
+
+  if (!positivePrompt) {
+    toast('Please enter a positive prompt.');
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/generate', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        positive_prompt: positivePrompt,
+        negative_prompt: negativePrompt,
+        server: server,
+      }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Failed to start generation');
+
+    // Show progress, hide buttons
+    $('#gen-progress-wrap').style.display = 'block';
+    $('#gen-btn-row').style.display = 'none';
+    pollGeneration();
+  } catch(e) {
+    toast(e.message);
+  }
+}
+
+let _genPollTimer;
+function pollGeneration() {
+  clearInterval(_genPollTimer);
+  _genPollTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/generate/status');
+      const j = await r.json();
+
+      $('#gen-prog-bar').style.width = j.progress + '%';
+      $('#gen-prog-pct').textContent = j.progress + '%';
+      $('#gen-msg').textContent = j.message || '';
+      renderSubSteps(j.sub_steps, $('#gen-sub-steps'));
+
+      if (j.status === 'complete') {
+        clearInterval(_genPollTimer);
+        onGenerationComplete(j);
+      } else if (j.status === 'error') {
+        clearInterval(_genPollTimer);
+        toast(j.error || 'Generation error');
+        $('#gen-msg').textContent = 'Error: ' + (j.error || 'Unknown');
+        // Re-show buttons so user can retry
+        $('#gen-btn-row').style.display = 'flex';
+        $('#gen-btn-row').innerHTML = `
+          <button class="btn btn-primary" onclick="retryGeneration()">Retry Generation</button>
+          <button class="btn btn-outline" onclick="showStep('results'); showResults();">Skip to Results</button>
+        `;
+      }
+    } catch(e) { /* ignore */ }
+  }, 2000);
+}
+
+function retryGeneration() {
+  $('#gen-progress-wrap').style.display = 'none';
+  $('#gen-btn-row').style.display = 'flex';
+  $('#gen-btn-row').innerHTML = `
+    <button class="btn btn-primary" id="btn-generate" onclick="startGeneration()">Generate Reskin</button>
+    <button class="btn btn-outline" onclick="showStep('results'); showResults();">Skip to Results</button>
+  `;
+}
+
+function onGenerationComplete(data) {
+  $('#gen-msg').textContent = data.message || 'Generation complete!';
+  // Replace buttons with proceed option
+  $('#gen-btn-row').style.display = 'flex';
+  $('#gen-btn-row').innerHTML = `
+    <button class="btn btn-success" onclick="goToValidate()">Proceed to Validate</button>
+    <button class="btn btn-outline" onclick="showStep('results'); showResults();">Skip to Results</button>
+  `;
+}
+
+function goToValidate() {
+  // Update the generated video name in validate step
+  const valName = $('#val-video-name');
+  valName.textContent = 'Using generated video from Stage 2';
+  valName.style.color = 'var(--success)';
+  showStep('validate');
+}
+
+/* =============================================================
+   STEP 5 — Validate IoU  (Stage 3)
+   ============================================================= */
+
+$('#btn-validate').addEventListener('click', startValidation);
+$('#btn-back-generate').addEventListener('click', () => showStep('generate'));
+$('#btn-skip-validate').addEventListener('click', () => {
+  showStep('results');
+  showResults();
+});
+
+// Handle uploaded generated video
+$('#val-video-input').addEventListener('change', function() {
+  if (this.files.length) {
+    const name = this.files[0].name;
+    $('#val-video-name').textContent = 'Selected: ' + name;
+    $('#val-video-name').style.color = 'var(--primary-h)';
+  }
+});
+
+async function startValidation() {
+  const threshold = parseFloat($('#iou-threshold').value) || 0.90;
+  const fileInput = $('#val-video-input');
+
+  const fd = new FormData();
+  fd.append('threshold', threshold);
+
+  // If user uploaded a different video, include it
+  if (fileInput.files.length > 0) {
+    fd.append('video', fileInput.files[0]);
+  }
+
+  try {
+    const r = await fetch('/api/validate', {method: 'POST', body: fd});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Failed to start validation');
+
+    $('#val-progress-wrap').style.display = 'block';
+    $('#val-btn-row').style.display = 'none';
+    pollValidation();
+  } catch(e) {
+    toast(e.message);
+  }
+}
+
+let _valPollTimer;
+function pollValidation() {
+  clearInterval(_valPollTimer);
+  _valPollTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/validate/status');
+      const j = await r.json();
+
+      $('#val-prog-bar').style.width = j.progress + '%';
+      $('#val-prog-pct').textContent = j.progress + '%';
+      $('#val-msg').textContent = j.message || '';
+      renderSubSteps(j.sub_steps, $('#val-sub-steps'));
+
+      if (j.status === 'complete') {
+        clearInterval(_valPollTimer);
+        onValidationComplete(j);
+      } else if (j.status === 'error') {
+        clearInterval(_valPollTimer);
+        toast(j.error || 'Validation error');
+        $('#val-msg').textContent = 'Error: ' + (j.error || 'Unknown');
+        $('#val-btn-row').style.display = 'flex';
+      }
+    } catch(e) { /* ignore */ }
+  }, 2000);
+}
+
+function onValidationComplete(data) {
+  const results = data.results;
+  if (!results) return;
+
+  // Show results section
+  $('#val-results-wrap').style.display = 'block';
+
+  // Badge
+  const badge = $('#val-iou-badge');
+  if (results.passed) {
+    badge.className = 'iou-badge pass';
+    badge.textContent = 'PASSED';
+  } else {
+    badge.className = 'iou-badge fail';
+    badge.textContent = 'FAILED';
+  }
+
+  // Summary cards
+  buildIoUSummary(results, '#val-iou-grid');
+
+  // Chart
+  drawIoUChart('#val-iou-chart', results.all_scores || [], results.threshold);
+
+  // Replace buttons
+  $('#val-btn-row').style.display = 'flex';
+  $('#val-btn-row').innerHTML = `
+    <button class="btn btn-success" onclick="showStep('results'); showResults();">View Full Results</button>
+    <button class="btn btn-outline" onclick="showStep('generate')">Re-generate</button>
+  `;
+}
+
+function buildIoUSummary(results, gridSel) {
+  const grid = $(gridSel);
+  grid.innerHTML = '';
+  const cards = [
+    {label: 'Average IoU', value: results.avg_iou.toFixed(4), detail: ''},
+    {label: 'Minimum IoU', value: results.min_iou.toFixed(4), detail: ''},
+    {label: 'Maximum IoU', value: results.max_iou.toFixed(4), detail: ''},
+    {label: 'Threshold', value: results.threshold.toFixed(2), detail: ''},
+    {label: 'Total Frames', value: results.total_frames, detail: ''},
+    {label: 'Failed Frames', value: results.failed_count, detail: results.failed_count > 0 ? 'below threshold' : 'all passed'},
+  ];
+  cards.forEach(c => {
+    const div = document.createElement('div');
+    div.className = 'summary-card';
+    div.innerHTML = `
+      <div class="sc-label">${c.label}</div>
+      <div class="sc-value">${c.value}</div>
+      ${c.detail ? '<div class="sc-detail">' + c.detail + '</div>' : ''}
+    `;
+    grid.appendChild(div);
+  });
+}
+
+function drawIoUChart(canvasSel, scores, threshold) {
+  const canvas = $(canvasSel);
+  if (!canvas || !scores.length) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 800;
+  const h = canvas.clientHeight || 160;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pad = {top: 20, right: 20, bottom: 28, left: 45};
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+
+  // Background
+  ctx.clearRect(0, 0, w, h);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(42,42,72,0.5)';
+  ctx.lineWidth = 1;
+  for (let v = 0; v <= 1; v += 0.25) {
+    const y = pad.top + plotH * (1 - v);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(w - pad.right, y);
+    ctx.stroke();
+  }
+
+  // Bars
+  const barW = Math.max(1, plotW / scores.length);
+  scores.forEach((iou, i) => {
+    const x = pad.left + i * barW;
+    const barH = Math.max(1, iou * plotH);
+    const y = pad.top + plotH - barH;
+    ctx.fillStyle = iou >= threshold ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)';
+    ctx.fillRect(x, y, Math.max(barW - 0.5, 1), barH);
+  });
+
+  // Threshold line
+  const threshY = pad.top + plotH * (1 - threshold);
+  ctx.strokeStyle = '#eab308';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(pad.left, threshY);
+  ctx.lineTo(w - pad.right, threshY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Labels
+  ctx.fillStyle = '#7878a0';
+  ctx.font = '11px Inter, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('1.0', pad.left - 5, pad.top + 4);
+  ctx.fillText(threshold.toFixed(2), pad.left - 5, threshY + 4);
+  ctx.fillText('0.0', pad.left - 5, pad.top + plotH + 4);
+
+  // Threshold label
+  ctx.fillStyle = '#eab308';
+  ctx.textAlign = 'left';
+  ctx.fillText('threshold', w - pad.right + 4, threshY + 4);
+
+  ctx.fillStyle = '#7878a0';
+  ctx.textAlign = 'center';
+  ctx.fillText('Frame 0', pad.left, h - 4);
+  ctx.fillText('Frame ' + (scores.length - 1), w - pad.right, h - 4);
+}
+
+/* =============================================================
+   STEP 6 — Results (full view)
+   ============================================================= */
+
+function showResults() {
+  // IoU section
+  const valResults = window._valResults;
+  if (valResults) {
+    $('#results-iou-section').style.display = 'block';
+    const badge = $('#results-iou-badge');
+    if (valResults.passed) {
+      badge.className = 'iou-badge pass';
+      badge.textContent = 'PASSED — All frames above threshold';
+    } else {
+      badge.className = 'iou-badge fail';
+      badge.textContent = 'FAILED — ' + valResults.failed_count + ' frame(s) below threshold';
+    }
+    buildIoUSummary(valResults, '#results-iou-grid');
+    // Draw chart after a brief delay so canvas is visible
+    requestAnimationFrame(() => drawIoUChart('#results-iou-chart', valResults.all_scores || [], valResults.threshold));
+  } else {
+    $('#results-iou-section').style.display = 'none';
+  }
+
+  // Generated video section
+  if (window._hasGeneratedVideo) {
+    $('#results-gen-section').style.display = 'block';
+    const origVid = $('#results-orig-video');
+    const genVid = $('#results-gen-video');
+    origVid.src = '/api/video/original';
+    genVid.src = '/api/generated/video';
+
+    // Sync playback
+    origVid.onplay = () => { genVid.currentTime = origVid.currentTime; genVid.play(); };
+    origVid.onpause = () => genVid.pause();
+    origVid.onseeked = () => { genVid.currentTime = origVid.currentTime; };
+  } else {
+    $('#results-gen-section').style.display = 'none';
+  }
+
+  // Frame analysis viewer (always available after extraction)
   compState.currentFrame = 0;
   compState.imageCache = {};
-
-  // Build tabs
   buildCompTabs();
 
-  // Setup slider
   const slider = $('#frame-slider');
   slider.max = Math.max(0, compState.frameCount - 1);
   slider.value = 0;
   updateFrameInfo(0);
-
-  // Load first frame
   loadCompFrame(0);
 
-  // Build summary
-  buildSummary(statusData);
+  buildSummary();
 }
+
+/* Fetch latest validation results before showing results */
+async function fetchAndShowResults() {
+  try {
+    const r = await fetch('/api/validate/status');
+    const j = await r.json();
+    if (j.results) window._valResults = j.results;
+  } catch(e) { /* ignore */ }
+
+  try {
+    const r = await fetch('/api/generate/status');
+    const j = await r.json();
+    window._hasGeneratedVideo = (j.status === 'complete' && j.generated_video);
+  } catch(e) { /* ignore */ }
+
+  showResults();
+}
+
+/* Override showStep for results to also fetch data */
+const _origShowStep = showStep;
+showStep = function(name) {
+  if (name === 'results') {
+    _origShowStep(name);
+    fetchAndShowResults();
+    return;
+  }
+  _origShowStep(name);
+};
+
+/* ---- Comparison viewer (Frame Analysis) ---- */
 
 function buildCompTabs() {
   const tabContainer = $('#comp-tabs');
@@ -1252,7 +1914,6 @@ function buildCompTabs() {
   if (compState.outputs['pose_skater'])     views.push({key: 'pose_skater',     label: 'Pose'});
   if (compState.outputs['mask_skateboard']) views.push({key: 'mask_skateboard', label: 'Board Mask'});
   if (compState.outputs['mask_skater'])     views.push({key: 'mask_skater',     label: 'Skater Mask'});
-  // Always offer overlay if any mask exists
   if (compState.outputs['mask_skateboard'] || compState.outputs['mask_skater']) {
     views.push({key: 'overlay', label: 'Overlay'});
   }
@@ -1262,7 +1923,6 @@ function buildCompTabs() {
     return;
   }
 
-  // Default to first available view
   compState.activeView = views[0].key;
 
   views.forEach(v => {
@@ -1295,7 +1955,6 @@ function loadImage(url) {
     const img = new Image();
     img.onload = () => {
       compState.imageCache[url] = img;
-      // Keep cache bounded
       const keys = Object.keys(compState.imageCache);
       if (keys.length > 200) {
         delete compState.imageCache[keys[0]];
@@ -1324,7 +1983,6 @@ function loadCompFrame(idx) {
       leftBody.innerHTML = '<div class="placeholder">Frame not available</div>';
     });
   } else {
-    // Fallback to API
     const fallback = `/api/frame/original/${idx}`;
     leftBody.innerHTML = `<img src="${fallback}" alt="Original frame ${idx}">`;
   }
@@ -1352,13 +2010,11 @@ function loadCompFrame(idx) {
     }
   }
 
-  // Preload nearby frames
   preloadNearby(idx);
 }
 
 function drawOverlayFrame(idx, container) {
   const origPath = framePath('frames_original', idx);
-  // Pick mask: prefer skateboard, fall back to skater
   const maskDir = compState.outputs['mask_skateboard'] ? 'mask_skateboard' : 'mask_skater';
   const maskPath = framePath(maskDir, idx);
 
@@ -1385,16 +2041,14 @@ function drawOverlayFrame(idx, container) {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(origImg, 0, 0, w, h);
 
-    // Get mask data
     const tmp = document.createElement('canvas');
     tmp.width = w; tmp.height = h;
     const tctx = tmp.getContext('2d');
     tctx.drawImage(maskImg, 0, 0, w, h);
     const maskData = tctx.getImageData(0, 0, w, h);
 
-    // Create colored overlay
     const overlayData = ctx.createImageData(w, h);
-    const color = maskDir === 'mask_skateboard' ? [249, 115, 22] : [59, 130, 246]; // orange / blue
+    const color = maskDir === 'mask_skateboard' ? [249, 115, 22] : [59, 130, 246];
     for (let i = 0; i < maskData.data.length; i += 4) {
       if (maskData.data[i] > 127) {
         overlayData.data[i]     = color[0];
@@ -1406,7 +2060,6 @@ function drawOverlayFrame(idx, container) {
     tctx.putImageData(overlayData, 0, 0);
     ctx.drawImage(tmp, 0, 0);
 
-    // If skater mask also exists, draw it too
     if (maskDir === 'mask_skateboard' && compState.outputs['mask_skater']) {
       const skaterMaskPath = framePath('mask_skater', idx);
       if (skaterMaskPath) {
@@ -1479,7 +2132,7 @@ function togglePlay() {
 
 function startPlay() {
   compState.playing = true;
-  $('#btn-play').innerHTML = '&#9646;&#9646;'; // pause icon
+  $('#btn-play').innerHTML = '&#9646;&#9646;';
   const interval = 1000 / (compState.fps || 30);
   compState.playTimer = setInterval(() => {
     let next = compState.currentFrame + 1;
@@ -1488,19 +2141,19 @@ function startPlay() {
     $('#frame-slider').value = next;
     updateFrameInfo(next);
     loadCompFrame(next);
-  }, Math.max(interval, 33)); // cap at ~30fps display rate
+  }, Math.max(interval, 33));
 }
 
 function stopPlay() {
   compState.playing = false;
-  $('#btn-play').innerHTML = '&#9654;'; // play icon
+  $('#btn-play').innerHTML = '&#9654;';
   if (compState.playTimer) {
     clearInterval(compState.playTimer);
     compState.playTimer = null;
   }
 }
 
-function buildSummary(data) {
+function buildSummary() {
   const grid = $('#summary-grid');
   grid.innerHTML = '';
 
@@ -1509,7 +2162,6 @@ function buildSummary(data) {
     {label: 'Duration', value: compState.duration.toFixed(1) + 's', detail: ''},
   ];
 
-  // Count output types
   if (compState.outputs['pose_skater']) {
     cards.push({label: 'Pose Frames', value: compState.outputs['pose_skater'].count, detail: 'pose_skater/'});
   }
@@ -1532,14 +2184,45 @@ function buildSummary(data) {
   });
 }
 
-/* Process another video */
+/* Process another video — full reset */
 $('#btn-new').addEventListener('click', () => {
   stopPlay();
   compState.imageCache = {};
+  compState.outputs = {};
   window._frameB64 = null;
+  window._valResults = null;
+  window._hasGeneratedVideo = false;
   fileInput.value = '';
   ytInput.value = '';
   $('#video-info').classList.remove('show');
+
+  // Reset Generate step
+  $('#gen-progress-wrap').style.display = 'none';
+  $('#gen-btn-row').style.display = 'flex';
+  $('#gen-btn-row').innerHTML = `
+    <button class="btn btn-primary" id="btn-generate" onclick="startGeneration()">Generate Reskin</button>
+    <button class="btn btn-outline" id="btn-skip-generate" onclick="showStep('results'); showResults();">Skip to Results</button>
+  `;
+  $('#positive-prompt').value = '';
+  $('#comfyui-status').textContent = '';
+  $('#gen-summary-grid').innerHTML = '';
+
+  // Reset Validate step
+  $('#val-progress-wrap').style.display = 'none';
+  $('#val-results-wrap').style.display = 'none';
+  $('#val-btn-row').style.display = 'flex';
+  $('#val-btn-row').innerHTML = `
+    <button class="btn btn-success" id="btn-validate" onclick="startValidation()">Run Validation</button>
+    <button class="btn btn-outline" id="btn-back-generate" onclick="showStep('generate')">Back</button>
+    <button class="btn btn-outline" id="btn-skip-validate" onclick="showStep('results'); showResults();">Skip to Results</button>
+  `;
+  $('#val-video-name').textContent = '';
+  $('#val-video-input').value = '';
+
+  // Reset Results step
+  $('#results-iou-section').style.display = 'none';
+  $('#results-gen-section').style.display = 'none';
+
   showStep('upload');
 });
 

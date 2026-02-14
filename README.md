@@ -4,7 +4,7 @@
 
 A 100% local pipeline that reskins dynamic human-object interactions (e.g., skateboard tricks) while enforcing strict frame-by-frame physical boundaries. No cloud APIs.
 
-Features automatic **YOLO + SAM 2.1** detection of both skater and skateboard, with a **local web UI** (`localhost:5000`) to validate segmentation masks, track pipeline progress with granular sub-steps, and **compare outputs side-by-side** (original vs. pose/mask/overlay) with a frame-by-frame scrubber. A headless CLI (`extract_physics.py`) is also available for scripted workflows.
+Features automatic **YOLO + SAM 2.1** detection of both skater and skateboard, with a **local web UI** (`localhost:5000`) that handles **all three pipeline stages** (extraction, generation, validation) through button-driven interaction. The UI provides live progress tracking, side-by-side comparison viewers (original vs. generated), frame-by-frame pose/mask/overlay scrubbing, and IoU validation charts. A headless CLI (`extract_physics.py`) is also available for scripted workflows.
 
 Optimized for **RTX 3070 8GB VRAM**.
 
@@ -16,44 +16,35 @@ Optimized for **RTX 3070 8GB VRAM**.
 input.mp4  (or YouTube URL)
     |
     v
-+--------------------------------------+
-|  app.py  (Web UI on localhost:5000)  |
-|                                      |
-|  1. YOLO auto-detect skater +        |
-|     skateboard on frame 0            |
-|  2. SAM 2.1 segments both objects    |
-|  3. Browser preview for validation   |
-|  4. Approve → run full pipeline:     |
-|     +- Step 0: Extract originals    |
-|     +- Pass 1: DWPose (~1.5GB)      |
-|     |  (skeleton extraction)         |
-|     |  > VRAM cleanup                |
-|     +- Pass 2: SAM 2.1 (~3GB)       |
-|        (multi-object propagation)    |
-|  5. Results: side-by-side comparison |
-|     (original vs pose/mask viewer)   |
-+--------------------------------------+
-    |             |              |              |
-    v             v              v              v
-frames_orig/  pose_skater/ mask_skateboard/ mask_skater/
-(JPG seq.)    (PNG seq.)   (PNG seq.)       (PNG seq.)
-    |            |              |
-    v            v              v
-+--------------------------------------+
-|  generate_reskin.py                  |
-|  (ComfyUI headless API)             |
-|  Wan 2.1 VACE 1.3B GGUF             |
-+--------------------------------------+
-    |
-    v
-output.mp4
-    |
-    v
-+--------------------------------------+
-|  evaluate_iou.py                     |
-|  (Reverse-tracking + IoU)            |
-|  Target: IoU > 0.90                  |
-+--------------------------------------+
++----------------------------------------------+
+|  app.py  (Web UI on localhost:5000)          |
+|  All 3 stages in one UI, button-driven       |
+|                                              |
+|  STAGE 1 — Extract Physics                   |
+|  1. YOLO auto-detect skater + skateboard     |
+|  2. SAM 2.1 segments both objects            |
+|  3. Browser preview for validation           |
+|  4. Approve → DWPose + SAM propagation       |
+|                                              |
+|  STAGE 2 — Generate Reskin                   |
+|  5. Enter prompts, click Generate            |
+|  6. ComfyUI headless API (Wan 2.1 VACE)     |
+|  7. Live progress via WebSocket              |
+|                                              |
+|  STAGE 3 — Validate IoU                      |
+|  8. Click Run Validation                     |
+|  9. Reverse-track generated video (SAM 2.1)  |
+| 10. Frame-by-frame IoU with chart + report   |
+|                                              |
+|  RESULTS — Full comparison viewer            |
+|  Original vs generated + pose/mask/overlay   |
++----------------------------------------------+
+    |                    |                |
+    v                    v                v
+frames_orig/     output/generated/   iou_report.json
+pose_skater/       output.mp4
+mask_skateboard/
+mask_skater/
 ```
 
 > The CLI script `extract_physics.py` supports `--bbox` for explicit coordinates
@@ -170,14 +161,16 @@ PowerShell:
 docker compose run --rm -p 5000:5000 pipeline src/app.py --output /data/output --sam-checkpoint /data/checkpoints/sam2.1_hiera_small.pt
 ```
 
-Open **http://localhost:5000** in your browser (NOT the Docker container IP). The web UI lets you:
+Open **http://localhost:5000** in your browser (NOT the Docker container IP). The web UI handles **all three stages** with button-driven interaction:
 
 1. **Upload** a video file or paste a YouTube URL
 2. **Auto-detect** — YOLO finds the skater + skateboard, SAM 2.1 segments them on frame 0
 3. **Validate** — review the coloured mask overlays (blue = skater, orange = skateboard)
 4. **Manual fallback** — if auto-detect misses something, click directly on the objects
 5. **Approve** — runs the full DWPose + SAM propagation pipeline with live sub-step progress
-6. **Compare** — side-by-side viewer: scrub through original vs. pose/mask/overlay frame-by-frame with play/pause controls
+6. **Generate** — enter creative prompts and generate a reskinned video via ComfyUI (requires ComfyUI running, see below)
+7. **Validate IoU** — reverse-track the generated video with SAM 2.1 and view frame-by-frame IoU results with pass/fail reporting
+8. **Results** — side-by-side viewer for original vs. generated video, frame-by-frame pose/mask/overlay scrubber, and IoU chart
 
 You can also pre-load a video:
 
@@ -419,7 +412,9 @@ python src/app.py --video input.mp4 --output output/
 python src/app.py --video "https://www.youtube.com/watch?v=VIDEO_ID" --output output/
 ```
 
-Upload your video, review the auto-detected masks, approve, and the full pipeline runs. When complete, the built-in comparison viewer lets you scrub through original vs. output frames side-by-side.
+Upload your video, review the auto-detected masks, approve, and the full pipeline runs. When extraction completes, enter your prompts and click **Generate** to create a reskinned video via ComfyUI (must be running). Then click **Run Validation** to measure IoU. The built-in comparison viewer lets you scrub through original vs. output frames side-by-side, and view generated video comparisons with IoU charts.
+
+> **Note:** Stages 2 (generation) and 3 (validation) are optional — you can skip either from the UI buttons and proceed directly to results.
 
 **Headless CLI (for scripting):**
 
@@ -535,7 +530,7 @@ skate-physics-preserver/
 +-- output/                       # (host-mounted) pipeline outputs
 +-- src/
 |   +-- __init__.py
-|   +-- app.py                    # Web UI: validation + pipeline launcher
+|   +-- app.py                    # Web UI: all 3 stages (extract/generate/validate)
 |   +-- auto_detect.py            # YOLO + SAM auto-detection module
 |   +-- extract_physics.py        # CLI: tracking orchestrator (headless)
 |   +-- generate_reskin.py        # CLI: ComfyUI headless client

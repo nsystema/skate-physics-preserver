@@ -82,6 +82,22 @@ state = {
     "error": None,
     # Pipeline sub-steps for detailed progress
     "sub_steps": [],           # list[dict] with label, status, detail
+    # Stage 2 — Generation
+    "comfyui_server": "127.0.0.1:8188",
+    "workflow_path": "./workflows/vace_template.json",
+    "gen_status": "idle",      # idle | running | complete | error
+    "gen_progress": 0,
+    "gen_message": "",
+    "gen_error": None,
+    "gen_sub_steps": [],
+    "generated_video_path": None,
+    # Stage 3 — Validation
+    "val_status": "idle",      # idle | running | complete | error
+    "val_progress": 0,
+    "val_message": "",
+    "val_error": None,
+    "val_sub_steps": [],
+    "val_results": None,
 }
 
 # YouTube regex (borrowed from extract_physics.py)
@@ -431,6 +447,145 @@ def outputs_info():
     return jsonify(info)
 
 
+# ------------------------------------------------------------------
+# 6.  ComfyUI server check
+# ------------------------------------------------------------------
+
+@app.route("/api/comfyui/check", methods=["POST"])
+def check_comfyui():
+    """Check if ComfyUI server is reachable."""
+    data = request.get_json(force=True) if request.is_json else {}
+    server = data.get("server", state["comfyui_server"])
+    state["comfyui_server"] = server
+
+    try:
+        from generate_reskin import ComfyOrchestrator
+        orch = ComfyOrchestrator(server)
+        if orch.check_server():
+            return jsonify({"status": "ok", "message": f"ComfyUI reachable at {server}"})
+        else:
+            return jsonify({"status": "error",
+                            "message": f"Cannot reach ComfyUI at {server}"}), 503
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 500
+
+
+# ------------------------------------------------------------------
+# 7.  Generate reskin  (Stage 2)
+# ------------------------------------------------------------------
+
+@app.route("/api/generate", methods=["POST"])
+def start_generation():
+    """Start the reskin generation pipeline."""
+    if state["status"] != "complete":
+        return jsonify({"error": "Stage 1 (extraction) must complete first."}), 400
+
+    data = request.get_json(force=True) if request.is_json else {}
+    positive_prompt = data.get("positive_prompt", "").strip()
+    negative_prompt = data.get("negative_prompt",
+                               "blurry, distorted, deformed, low quality").strip()
+    server = data.get("server", state["comfyui_server"])
+
+    if not positive_prompt:
+        return jsonify({"error": "Positive prompt is required."}), 400
+
+    state["comfyui_server"] = server
+    state["gen_status"] = "running"
+    state["gen_progress"] = 0
+    state["gen_message"] = "Starting generation..."
+    state["gen_error"] = None
+    state["gen_sub_steps"] = []
+    state["generated_video_path"] = None
+    state["_positive_prompt"] = positive_prompt
+    state["_negative_prompt"] = negative_prompt
+
+    t = threading.Thread(target=_run_generation, daemon=True)
+    t.start()
+    return jsonify({"status": "running"})
+
+
+@app.route("/api/generate/status")
+def generation_status():
+    """Poll generation progress."""
+    return jsonify({
+        "status": state["gen_status"],
+        "progress": state["gen_progress"],
+        "message": state["gen_message"],
+        "error": state["gen_error"],
+        "sub_steps": state.get("gen_sub_steps", []),
+        "generated_video": state.get("generated_video_path"),
+    })
+
+
+# ------------------------------------------------------------------
+# 8.  Validate IoU  (Stage 3)
+# ------------------------------------------------------------------
+
+@app.route("/api/validate", methods=["POST"])
+def start_validation():
+    """Start IoU validation."""
+    gen_video = state.get("generated_video_path")
+
+    # Accept uploaded video
+    if "video" in request.files:
+        f = request.files["video"]
+        if f and f.filename:
+            upload_dir = os.path.join(state["output_dir"], "generated")
+            os.makedirs(upload_dir, exist_ok=True)
+            save_path = os.path.join(upload_dir, f.filename)
+            f.save(save_path)
+            gen_video = save_path
+            state["generated_video_path"] = gen_video
+
+    if not gen_video or not os.path.isfile(gen_video):
+        return jsonify({
+            "error": "No generated video available. "
+                     "Run generation first or upload a video."
+        }), 400
+
+    data = (request.form if request.form
+            else (request.get_json(force=True) if request.is_json else {}))
+    threshold = float(data.get("threshold", 0.90))
+
+    state["val_status"] = "running"
+    state["val_progress"] = 0
+    state["val_message"] = "Starting validation..."
+    state["val_error"] = None
+    state["val_sub_steps"] = []
+    state["val_results"] = None
+    state["_val_threshold"] = threshold
+
+    t = threading.Thread(target=_run_validation, daemon=True)
+    t.start()
+    return jsonify({"status": "running"})
+
+
+@app.route("/api/validate/status")
+def validation_status():
+    """Poll validation progress."""
+    return jsonify({
+        "status": state["val_status"],
+        "progress": state["val_progress"],
+        "message": state["val_message"],
+        "error": state["val_error"],
+        "sub_steps": state.get("val_sub_steps", []),
+        "results": state.get("val_results"),
+    })
+
+
+@app.route("/api/generated/video")
+def serve_generated_video():
+    """Serve the generated video file."""
+    vp = state.get("generated_video_path")
+    if not vp or not os.path.isfile(vp):
+        return jsonify({"error": "No generated video available"}), 404
+    ext = os.path.splitext(vp)[1].lower()
+    mime_map = {".mp4": "video/mp4", ".webm": "video/webm",
+                ".gif": "image/gif", ".avi": "video/x-msvideo"}
+    return send_file(os.path.abspath(vp),
+                     mimetype=mime_map.get(ext, "video/mp4"))
+
+
 # ===================================================================
 # Background pipeline
 # ===================================================================
@@ -623,6 +778,236 @@ def _run_pipeline():
 
 
 # ===================================================================
+# Stage 2 — Generation background thread
+# ===================================================================
+
+def _update_gen_sub(idx, status, detail=""):
+    """Update a sub-step in state['gen_sub_steps']."""
+    if 0 <= idx < len(state["gen_sub_steps"]):
+        state["gen_sub_steps"][idx]["status"] = status
+        if detail:
+            state["gen_sub_steps"][idx]["detail"] = detail
+
+
+def _run_generation():
+    """Execute ComfyUI generation pipeline (Stage 2)."""
+    try:
+        from generate_reskin import ComfyOrchestrator
+
+        server = state["comfyui_server"]
+        workflow_path = state["workflow_path"]
+        source_video = state["video_path"]
+        masks_dir = os.path.join(state["output_dir"], "mask_skateboard")
+        poses_dir = os.path.join(state["output_dir"], "pose_skater")
+        output_dir = os.path.join(state["output_dir"], "generated")
+        positive_prompt = state["_positive_prompt"]
+        negative_prompt = state["_negative_prompt"]
+
+        state["gen_sub_steps"] = [
+            {"label": "Check ComfyUI connection", "status": "pending", "detail": ""},
+            {"label": "Upload assets", "status": "pending", "detail": ""},
+            {"label": "Configure & submit job", "status": "pending", "detail": ""},
+            {"label": "Generate video", "status": "pending", "detail": ""},
+            {"label": "Retrieve output", "status": "pending", "detail": ""},
+        ]
+
+        # Step 0: Check connection
+        _update_gen_sub(0, "running", "Connecting...")
+        state["gen_message"] = "Checking ComfyUI connection..."
+        state["gen_progress"] = 2
+
+        orch = ComfyOrchestrator(server)
+        if not orch.check_server():
+            raise RuntimeError(
+                f"Cannot reach ComfyUI at {server}. "
+                "Start ComfyUI with: python main.py --listen 0.0.0.0 --lowvram"
+            )
+        _update_gen_sub(0, "complete", "Connected")
+        state["gen_progress"] = 5
+
+        # Validate inputs
+        for label, path in [
+            ("Source video", source_video),
+            ("Masks directory", masks_dir),
+            ("Poses directory", poses_dir),
+            ("Workflow template", workflow_path),
+        ]:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"{label} not found: {path}")
+
+        # Progress callback
+        def on_progress(event, detail, pct):
+            if event == "uploading":
+                _update_gen_sub(1, "running", detail)
+                state["gen_progress"] = 5 + int(pct * 25)
+                state["gen_message"] = f"Uploading: {detail}"
+            elif event == "injecting":
+                _update_gen_sub(1, "complete")
+                _update_gen_sub(2, "running", detail)
+                state["gen_progress"] = 32
+                state["gen_message"] = detail
+            elif event == "generating":
+                _update_gen_sub(2, "complete")
+                _update_gen_sub(3, "running", detail)
+                state["gen_progress"] = 35 + int(pct * 55)
+                state["gen_message"] = f"Generating: {detail}"
+            elif event == "retrieving":
+                _update_gen_sub(3, "complete")
+                _update_gen_sub(4, "running", detail)
+                state["gen_progress"] = 92
+                state["gen_message"] = detail
+            elif event == "complete":
+                _update_gen_sub(4, "complete", detail)
+                state["gen_progress"] = 100
+
+        orch.progress_callback = on_progress
+
+        _update_gen_sub(1, "running", "Starting uploads...")
+        state["gen_message"] = "Uploading assets to ComfyUI..."
+
+        output_file = orch.execute_v2v(
+            workflow_path=workflow_path,
+            source_video_path=source_video,
+            masks_dir=masks_dir,
+            poses_dir=poses_dir,
+            positive_prompt=positive_prompt,
+            negative_prompt=negative_prompt,
+            output_dir=output_dir,
+        )
+
+        state["generated_video_path"] = output_file
+        state["gen_status"] = "complete"
+        state["gen_progress"] = 100
+        state["gen_message"] = (
+            f"Generation complete! Output: "
+            f"{os.path.basename(output_file) if output_file else 'unknown'}"
+        )
+
+        # Mark all steps complete
+        for i in range(5):
+            if state["gen_sub_steps"][i]["status"] != "complete":
+                _update_gen_sub(i, "complete")
+
+        print(f"\n[GEN DONE] {state['gen_message']}\n")
+
+    except Exception as exc:
+        state["gen_status"] = "error"
+        state["gen_error"] = str(exc)
+        state["gen_message"] = f"Generation failed: {exc}"
+        for ss in state.get("gen_sub_steps", []):
+            if ss["status"] == "running":
+                ss["status"] = "error"
+                ss["detail"] = str(exc)
+                break
+        import traceback; traceback.print_exc()
+
+
+# ===================================================================
+# Stage 3 — Validation background thread
+# ===================================================================
+
+def _update_val_sub(idx, status, detail=""):
+    """Update a sub-step in state['val_sub_steps']."""
+    if 0 <= idx < len(state["val_sub_steps"]):
+        state["val_sub_steps"][idx]["status"] = status
+        if detail:
+            state["val_sub_steps"][idx]["detail"] = detail
+
+
+def _run_validation():
+    """Execute IoU validation (Stage 3)."""
+    try:
+        from evaluate_iou import (
+            load_mask_sequence, extract_generated_masks, run_validation,
+        )
+
+        gen_video = state["generated_video_path"]
+        masks_dir = os.path.join(state["output_dir"], "mask_skateboard")
+        threshold = state.get("_val_threshold", 0.90)
+
+        # Find skateboard bbox from detections
+        bbox = None
+        for det in state.get("detections", []):
+            if det["label"] == "skateboard":
+                bbox = det["bbox"]
+                break
+        if not bbox:
+            raise ValueError(
+                "No skateboard bounding box found from Stage 1 detections."
+            )
+
+        state["val_sub_steps"] = [
+            {"label": "Load ground-truth masks", "status": "pending", "detail": ""},
+            {"label": "Reverse-track generated video (SAM 2.1)", "status": "pending", "detail": ""},
+            {"label": "Frame-by-frame IoU comparison", "status": "pending", "detail": ""},
+        ]
+
+        # Step 0: Load GT masks
+        _update_val_sub(0, "running", "Loading masks...")
+        state["val_message"] = "Loading ground-truth masks..."
+        state["val_progress"] = 5
+
+        gt_masks = load_mask_sequence(masks_dir)
+        _update_val_sub(0, "complete", f"{len(gt_masks)} masks loaded")
+        state["val_progress"] = 15
+
+        # Step 1: Reverse-track generated video
+        _update_val_sub(1, "running", "Running SAM 2.1 on generated video...")
+        state["val_message"] = "Reverse-tracking generated video with SAM 2.1..."
+        state["val_progress"] = 20
+
+        gen_masks = extract_generated_masks(
+            video_path=gen_video,
+            bbox=bbox,
+            sam_checkpoint=state["sam_checkpoint"],
+            sam_config=state["sam_config"],
+            device=state["device"],
+        )
+        _update_val_sub(1, "complete", f"{len(gen_masks)} masks extracted")
+        state["val_progress"] = 75
+
+        # Step 2: IoU comparison
+        _update_val_sub(2, "running", "Computing IoU scores...")
+        state["val_message"] = "Computing frame-by-frame IoU..."
+        state["val_progress"] = 80
+
+        results = run_validation(
+            gt_masks, gen_masks, threshold=threshold, verbose=False,
+        )
+        _update_val_sub(2, "complete",
+                        f"{'PASSED' if results['passed'] else 'FAILED'}")
+
+        # Save report
+        report_path = os.path.join(state["output_dir"], "iou_report.json")
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2)
+
+        state["val_results"] = results
+        state["val_status"] = "complete"
+        state["val_progress"] = 100
+
+        passed_str = "PASSED" if results["passed"] else "FAILED"
+        state["val_message"] = (
+            f"Validation {passed_str}. "
+            f"Avg IoU: {results['avg_iou']:.4f} | "
+            f"Min IoU: {results['min_iou']:.4f} | "
+            f"Failed frames: {results['failed_count']}/{results['total_frames']}"
+        )
+        print(f"\n[VAL DONE] {state['val_message']}\n")
+
+    except Exception as exc:
+        state["val_status"] = "error"
+        state["val_error"] = str(exc)
+        state["val_message"] = f"Validation failed: {exc}"
+        for ss in state.get("val_sub_steps", []):
+            if ss["status"] == "running":
+                ss["status"] = "error"
+                ss["detail"] = str(exc)
+                break
+        import traceback; traceback.print_exc()
+
+
+# ===================================================================
 # Entry point
 # ===================================================================
 
@@ -641,6 +1026,11 @@ def main():
     ap.add_argument("--pose-mode", default="balanced",
                     choices=["performance", "balanced", "lightweight"])
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--comfyui-server", default="127.0.0.1:8188",
+                    help="ComfyUI server address (host:port)")
+    ap.add_argument("--workflow",
+                    default="./workflows/vace_template.json",
+                    help="ComfyUI workflow template JSON")
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--no-browser", action="store_true",
                     help="Don't auto-open the browser")
@@ -654,6 +1044,8 @@ def main():
         "sam_config": args.sam_config,
         "pose_mode": args.pose_mode,
         "device": args.device,
+        "comfyui_server": args.comfyui_server,
+        "workflow_path": args.workflow,
     })
 
     # Pre-load video if given on CLI
