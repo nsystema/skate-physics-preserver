@@ -117,69 +117,6 @@ def _is_yt(url: str) -> bool:
     return bool(_YT_RE.match(url))
 
 
-# ---------------------------------------------------------------------------
-# Persistence helpers — skip detection & extraction for already-processed videos
-# ---------------------------------------------------------------------------
-
-def _count_files(directory, extensions=('.png', '.jpg', '.jpeg')):
-    """Count files with given extensions in a directory."""
-    if not directory or not os.path.isdir(directory):
-        return 0
-    return sum(1 for f in os.listdir(directory)
-               if any(f.lower().endswith(ext) for ext in extensions))
-
-
-def _check_existing_outputs(video_path, output_dir):
-    """
-    Check if a video was already fully processed and valid outputs exist.
-
-    Returns the loaded metadata dict if cache is valid, None otherwise.
-    """
-    if not output_dir or not video_path:
-        return None
-
-    meta_path = os.path.join(output_dir, "tracking_metadata.json")
-    if not os.path.isfile(meta_path):
-        return None
-
-    try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            metadata = json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return None
-
-    # Check that the video matches (same absolute path)
-    stored_video = metadata.get("video", "")
-    current_abs = os.path.abspath(video_path)
-    if os.path.normpath(stored_video) != os.path.normpath(current_abs):
-        return None
-
-    if not os.path.isfile(current_abs):
-        return None
-
-    # Verify file size if available (guards against file replacement)
-    stored_size = metadata.get("video_size")
-    if stored_size is not None:
-        try:
-            actual_size = os.path.getsize(current_abs)
-            if actual_size != stored_size:
-                return None
-        except OSError:
-            return None
-
-    # Check that key output directories have files (need at least poses + masks)
-    dirs_found = 0
-    for key in ["masks_dir", "masks_skateboard_dir", "poses_dir", "json_dir"]:
-        d = metadata.get(key, "")
-        if d and os.path.isdir(d) and os.listdir(d):
-            dirs_found += 1
-
-    if dirs_found < 2:
-        return None
-
-    return metadata
-
-
 # ===================================================================
 # API routes
 # ===================================================================
@@ -272,45 +209,6 @@ def load_video():
         state["fps"] = fps
         state["frame_count"] = frame_count
         state["duration"] = frame_count / fps if fps > 0 else 0
-
-        # ----------------------------------------------------------
-        # Persistence check: skip detect & extract if already done
-        # ----------------------------------------------------------
-        existing = _check_existing_outputs(video_path, state["output_dir"])
-        if existing:
-            state["detections"] = existing.get("detections", [])
-            state["frame_count"] = existing.get("frame_count", frame_count)
-            state["fps"] = existing.get("fps", fps)
-            state["duration"] = existing.get("duration",
-                                             frame_count / fps if fps > 0 else 0)
-            state["status"] = "complete"
-            state["progress"] = 100
-            state["message"] = "Video already processed — loaded from cache."
-            state["sub_steps"] = [
-                {"label": "Extract original frames", "status": "complete",
-                 "detail": "cached"},
-                {"label": "DWPose skeleton extraction", "status": "complete",
-                 "detail": "cached"},
-                {"label": "SAM 2.1 mask propagation", "status": "complete",
-                 "detail": "cached"},
-                {"label": "Save metadata", "status": "complete",
-                 "detail": "cached"},
-            ]
-            print(f"[CACHE] Video already processed — skipping detection "
-                  f"& extraction for: {os.path.basename(video_path)}")
-
-            return jsonify({
-                "status": "complete",
-                "already_processed": True,
-                "frame": state["frame0_b64"],
-                "width": w,
-                "height": h,
-                "fps": state["fps"],
-                "frame_count": state["frame_count"],
-                "duration": state["duration"],
-                "video_path": os.path.basename(video_path),
-            })
-
         state["status"] = "loaded"
 
         return jsonify({
@@ -943,135 +841,100 @@ def _run_pipeline():
         # ----------------------------------------------------------
         # STEP 0 — Extract original frames (for comparison viewer)
         # ----------------------------------------------------------
-        cached_frame_count = _count_files(frames_dir)
-        if cached_frame_count > 0:
-            # Frames already extracted — skip
-            _update_sub(0, "complete", f"{cached_frame_count} frames (cached)")
-            print(f"[CACHE] Skipping frame extraction — "
-                  f"{cached_frame_count} frames already exist.")
-            cap = cv2.VideoCapture(video_path)
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            cap.release()
-            idx = cached_frame_count
-        else:
-            _update_sub(0, "running", "Reading video …")
-            state["message"] = "Extracting original frames for comparison viewer …"
-            state["progress"] = 1
+        _update_sub(0, "running", "Reading video …")
+        state["message"] = "Extracting original frames for comparison viewer …"
+        state["progress"] = 1
 
-            os.makedirs(frames_dir, exist_ok=True)
-            cap = cv2.VideoCapture(video_path)
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-            idx = 0
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                cv2.imwrite(
-                    os.path.join(frames_dir, f"frame_{idx:05d}.jpg"),
-                    frame,
-                    [cv2.IMWRITE_JPEG_QUALITY, 90],
-                )
-                idx += 1
-            cap.release()
-            _update_sub(0, "complete", f"{idx} frames")
+        os.makedirs(frames_dir, exist_ok=True)
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        idx = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            cv2.imwrite(
+                os.path.join(frames_dir, f"frame_{idx:05d}.jpg"),
+                frame,
+                [cv2.IMWRITE_JPEG_QUALITY, 90],
+            )
+            idx += 1
+        cap.release()
 
         state["fps"] = fps
         state["frame_count"] = idx
         state["duration"] = idx / fps if fps > 0 else 0
         state["progress"] = 5
+        _update_sub(0, "complete", f"{idx} frames")
 
         # ----------------------------------------------------------
         # PASS 1 — DWPose skeleton extraction
         # ----------------------------------------------------------
-        cached_poses = _count_files(poses_dir)
-        cached_json = _count_files(json_dir, extensions=('.json',))
-        if cached_poses > 0 and cached_json > 0:
-            n_pose = cached_poses
-            _update_sub(1, "complete", f"{n_pose} poses (cached)")
-            state["message"] = f"Pass 1/2 — {n_pose} poses already extracted (cached)."
-            print(f"[CACHE] Skipping DWPose — {n_pose} poses already exist.")
-        else:
-            _update_sub(1, "running", "Loading DWPose model …")
-            state["message"] = "Pass 1/2 — Extracting skater pose (DWPose) …"
-            state["progress"] = 8
+        _update_sub(1, "running", "Loading DWPose model …")
+        state["message"] = "Pass 1/2 — Extracting skater pose (DWPose) …"
+        state["progress"] = 8
 
-            from tracking.skater_pose import SkaterPoseExtractor
+        from tracking.skater_pose import SkaterPoseExtractor
 
-            pose_ext = SkaterPoseExtractor(
-                device=device,
-                backend="onnxruntime",
-                mode=state["pose_mode"],
-            )
-            n_pose = pose_ext.process_video(video_path, poses_dir, json_dir)
-            pose_ext.cleanup()
+        pose_ext = SkaterPoseExtractor(
+            device=device,
+            backend="onnxruntime",
+            mode=state["pose_mode"],
+        )
+        n_pose = pose_ext.process_video(video_path, poses_dir, json_dir)
+        pose_ext.cleanup()
 
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-
-            _update_sub(1, "complete", f"{n_pose} poses extracted")
-            state["message"] = f"Pass 1/2 done — {n_pose} pose frames."
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
 
         state["progress"] = 40
+        _update_sub(1, "complete", f"{n_pose} poses extracted")
+        state["message"] = f"Pass 1/2 done — {n_pose} pose frames."
 
         # ----------------------------------------------------------
         # PASS 2 — SAM 2.1 multi-object mask propagation
         # ----------------------------------------------------------
-        cached_board_masks = _count_files(masks_skateboard_dir)
-        cached_skater_masks = _count_files(masks_skater_dir)
-        if cached_board_masks > 0 or cached_skater_masks > 0:
-            counts = {}
-            if cached_board_masks > 0:
-                counts[1] = cached_board_masks
-            if cached_skater_masks > 0:
-                counts[2] = cached_skater_masks
-            n_mask = max(counts.values())
-            _update_sub(2, "complete", f"{n_mask} mask frames (cached)")
-            state["message"] = f"Pass 2/2 — {n_mask} masks already extracted (cached)."
-            print(f"[CACHE] Skipping SAM propagation — masks already exist "
-                  f"(board={cached_board_masks}, skater={cached_skater_masks}).")
-        else:
-            _update_sub(2, "running", "Loading SAM 2.1 model …")
-            state["message"] = "Pass 2/2 — Loading SAM 2.1 video predictor …"
-            state["progress"] = 45
+        _update_sub(2, "running", "Loading SAM 2.1 model …")
+        state["message"] = "Pass 2/2 — Loading SAM 2.1 video predictor …"
+        state["progress"] = 45
 
-            from tracking.skateboard_tracker import SkateboardTracker
+        from tracking.skateboard_tracker import SkateboardTracker
 
-            tracker = SkateboardTracker(
-                checkpoint_path=state["sam_checkpoint"],
-                config_path=state["sam_config"],
-                device=device,
-            )
-            tracker.init_video(video_path)
+        tracker = SkateboardTracker(
+            checkpoint_path=state["sam_checkpoint"],
+            config_path=state["sam_config"],
+            device=device,
+        )
+        tracker.init_video(video_path)
 
-            state["progress"] = 55
-            _update_sub(2, "running", "Initializing prompts …")
+        state["progress"] = 55
+        _update_sub(2, "running", "Initializing prompts …")
 
-            output_dirs: dict[int, str] = {}
-            for oid, det in prompts.items():
-                tracker.add_initial_prompt(frame_idx=0, bbox=det["bbox"], obj_id=oid)
-                if det["label"] == "skateboard":
-                    output_dirs[oid] = masks_skateboard_dir
-                else:
-                    output_dirs[oid] = masks_skater_dir
+        output_dirs: dict[int, str] = {}
+        for oid, det in prompts.items():
+            tracker.add_initial_prompt(frame_idx=0, bbox=det["bbox"], obj_id=oid)
+            if det["label"] == "skateboard":
+                output_dirs[oid] = masks_skateboard_dir
+            else:
+                output_dirs[oid] = masks_skater_dir
 
-            state["message"] = "Propagating masks through video …"
-            state["progress"] = 60
-            _update_sub(2, "running", "Propagating masks …")
+        state["message"] = "Propagating masks through video …"
+        state["progress"] = 60
+        _update_sub(2, "running", "Propagating masks …")
 
-            def _prog(frac):
-                state["progress"] = 60 + int(frac * 33)
-                _update_sub(2, "running", f"{int(frac * 100)}% complete")
+        def _prog(frac):
+            state["progress"] = 60 + int(frac * 33)
+            _update_sub(2, "running", f"{int(frac * 100)}% complete")
 
-            counts = tracker.propagate_and_save_multi(
-                output_dirs=output_dirs,
-                progress_callback=_prog,
-            )
-            tracker.cleanup()
+        counts = tracker.propagate_and_save_multi(
+            output_dirs=output_dirs,
+            progress_callback=_prog,
+        )
+        tracker.cleanup()
 
-            n_mask = max(counts.values()) if counts else 0
-            _update_sub(2, "complete", f"{n_mask} mask frames")
+        n_mask = max(counts.values()) if counts else 0
+        _update_sub(2, "complete", f"{n_mask} mask frames")
 
         # ----------------------------------------------------------
         # Metadata
@@ -1083,7 +946,6 @@ def _run_pipeline():
         metadata = {
             "source": video_path,
             "video": os.path.abspath(video_path),
-            "video_size": os.path.getsize(os.path.abspath(video_path)),
             "fps": fps,
             "frame_count": state["frame_count"],
             "duration": state["duration"],
