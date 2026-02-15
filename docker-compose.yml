@@ -6,7 +6,7 @@
 #   docker compose up comfyui               -> start ComfyUI only
 #   docker compose run --rm pipeline ...    -> run CLI commands
 #
-# First run downloads ~8 GB of AI models into the comfyui-models volume.
+# First run downloads ~10 GB of AI models into the comfyui-models volume.
 # Subsequent starts are instant.
 #
 # Examples (PowerShell — everything on one line, or use backtick `):

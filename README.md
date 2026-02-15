@@ -59,7 +59,7 @@ Docker handles **everything** — the extraction pipeline, ComfyUI, custom nodes
 | Docker Desktop (WSL2 backend) | `docker --version` | [docker.com/desktop](https://www.docker.com/products/docker-desktop/) |
 | NVIDIA GPU Driver 525+ | `nvidia-smi` | [nvidia.com/drivers](https://www.nvidia.com/download/index.aspx) |
 | NVIDIA Container Toolkit | `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi` | [see below](#nvidia-container-toolkit) |
-| ~25 GB free disk | Docker images (~15 GB) + AI models (~8 GB) | |
+| ~25 GB free disk | Docker images (~15 GB) + AI models (~10 GB) | |
 
 ### 1. Build
 
@@ -98,10 +98,10 @@ That's it. This starts both services:
 
 | Service | Port | What it does |
 |---------|------|-------------|
-| **comfyui** | 8188 | ComfyUI server (downloads ~8 GB of models on first run, then starts) |
+| **comfyui** | 8188 | ComfyUI server (downloads ~10 GB of models on first run, then starts) |
 | **pipeline** | 5000 | Web UI — waits for ComfyUI to be healthy, then launches |
 
-Open **http://localhost:5000** once you see the startup banner. The first run takes a few minutes while ComfyUI downloads the Wan 2.1 VACE, CLIP, and VAE models (~8 GB total). These are cached in a Docker volume and persist across restarts.
+Open **http://localhost:5000** once you see the startup banner. The first run takes a few minutes while ComfyUI downloads the Wan 2.2 Fun Control, CLIP, and VAE models (~10 GB total). These are cached in a Docker volume and persist across restarts.
 
 > DWPose ONNX models (~200 MB) auto-download on first extraction run and are also cached.
 
@@ -326,17 +326,17 @@ git clone https://github.com/kijai/ComfyUI-WanVideoWrapper
 
 | Model | Path in ComfyUI | Size | Source |
 |-------|------|------|--------|
-| Wan 2.1 VACE 1.3B GGUF Q8 | `models/unet/wan2.1_vace_1.3B_Q8_0.gguf` | ~2.3 GB | [samuelchristlie/Wan2.1-VACE-1.3B-GGUF](https://huggingface.co/samuelchristlie/Wan2.1-VACE-1.3B-GGUF) |
+| Wan 2.2 Fun 5B Control GGUF Q4_K_M | `models/unet/Wan2.2-Fun-5B-Control-Q4_K_M.gguf` | ~3.4 GB | [QuantStack/Wan2.2-Fun-5B-Control-GGUF](https://huggingface.co/QuantStack/Wan2.2-Fun-5B-Control-GGUF) |
 | UMT5-XXL FP8 | `models/clip/umt5_xxl_fp8_e4m3fn.safetensors` | ~6.7 GB | [Comfy-Org/Wan_2.1_ComfyUI_repackaged](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) |
 | Wan 2.1 VAE | `models/vae/wan_2.1_vae.safetensors` | ~254 MB | [Comfy-Org/Wan_2.1_ComfyUI_repackaged](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) |
 
 ### Custom Workflow
 
-The template at `workflows/vace_template.json` is the default. To use your own:
+The template at `workflows/fun_control_template.json` is the default. To use your own:
 
 1. Create your workflow in ComfyUI's GUI
 2. Settings > Dev Mode > "Save (API Format)"
-3. Replace `workflows/vace_template.json`
+3. Replace `workflows/fun_control_template.json`
 4. Give nodes descriptive `_meta.title` values for reliable injection
 
 The script resolves nodes by `_meta.title` first, then falls back to `class_type`.
@@ -373,7 +373,7 @@ python src/app.py --output output/ --comfyui-path C:\path\to\ComfyUI
 - **DWPose balanced** mode instead of performance
 - **Sequential processing** with full VRAM cleanup between passes
 - **CPU offloading** for SAM2 frame embeddings and tracking state
-- **Wan 2.1 VACE 1.3B GGUF Q8** for generation (~3 GB model)
+- **Wan 2.2 Fun 5B Control GGUF Q4_K_M** for generation (~3.4 GB model)
 - **ComfyUI `--lowvram`** flag for aggressive model offloading
 
 ---
@@ -395,7 +395,7 @@ skate-physics-preserver/
 +-- input/                          # source videos (host-mounted)
 +-- output/                         # pipeline outputs (host-mounted)
 +-- workflows/
-|   +-- vace_template.json          # ComfyUI workflow template
+|   +-- fun_control_template.json   # ComfyUI workflow template
 +-- src/
     +-- app.py                      # Web UI (all 3 stages)
     +-- auto_detect.py              # YOLO + SAM auto-detection
@@ -419,7 +419,7 @@ skate-physics-preserver/
 > Open **http://localhost:5000**, not the container IP. Verify both services started: `docker compose ps`.
 
 **ComfyUI model download is slow / stalled**
-> First run downloads ~8 GB from HuggingFace. Downloads have resume support — if interrupted, restart with `docker compose up` and it will continue where it left off. You can also monitor progress in the ComfyUI container logs: `docker compose logs -f comfyui`.
+> First run downloads ~10 GB from HuggingFace. Downloads have resume support — if interrupted, restart with `docker compose up` and it will continue where it left off. You can also monitor progress in the ComfyUI container logs: `docker compose logs -f comfyui`.
 
 **Pipeline starts before ComfyUI is ready**
 > The pipeline waits for ComfyUI's health check. If it times out, restart: `docker compose restart pipeline`.
@@ -471,4 +471,4 @@ sudo systemctl restart docker
 Research/educational use. See individual model licenses:
 - SAM 2.1: Apache 2.0
 - DWPose/rtmlib: Apache 2.0
-- Wan 2.1: Apache 2.0
+- Wan 2.2: Apache 2.0

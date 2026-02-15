@@ -50,7 +50,8 @@ RUN git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite && \
 RUN git clone https://github.com/city96/ComfyUI-GGUF && \
     pip install --no-cache-dir -r ComfyUI-GGUF/requirements.txt || true
 
-# ComfyUI-WanVideoWrapper (Wan 2.1 video model support)
+# ComfyUI-WanVideoWrapper (Wan 2.x video model support — WanFunControlToVideo
+# is native in ComfyUI since Jan 2026 but this wrapper adds extra utilities)
 RUN git clone https://github.com/kijai/ComfyUI-WanVideoWrapper && \
     pip install --no-cache-dir -r ComfyUI-WanVideoWrapper/requirements.txt || true
 
@@ -58,6 +59,32 @@ RUN git clone https://github.com/kijai/ComfyUI-WanVideoWrapper && \
 WORKDIR /comfyui
 RUN mkdir -p models/unet models/clip models/vae models/checkpoints \
             input output
+
+# ---------- Patch: Wan22FunControlToVideo for spatial inpainting ----------
+# Two fixes in the Wan22FunControlToVideo class:
+#   1. Expose start_image in the schema (execute() already handles it).
+#   2. When start_image covers ALL requested frames (spatial inpainting
+#      mode), do NOT zero the mask.  Zero mask = "preserve start_image",
+#      which is correct for temporal continuation but wrong for spatial
+#      white-out inpainting where the model must generate everywhere.
+RUN python -c "\
+import re; \
+p = '/comfyui/comfy_extras/nodes_wan.py'; \
+t = open(p).read(); \
+# Patch 1: add start_image to the schema inputs \
+t = re.sub( \
+    r'(class Wan22FunControlToVideo.*?io\.Image\.Input\(\"ref_image\", optional=True\),)', \
+    r'\1\n                io.Image.Input(\"start_image\", optional=True),', \
+    t, count=1, flags=re.DOTALL); \
+# Patch 2: only zero the mask when start_image is shorter than length \
+# (temporal continuation), not when it covers all frames (spatial inpaint) \
+t = t.replace( \
+    'mask[:, :, :start_image.shape[0] + 3] = 0.0', \
+    'if start_image.shape[0] < length: mask[:, :, :start_image.shape[0] + 3] = 0.0  # temporal only', \
+    1); \
+open(p,'w').write(t); \
+print('Patched Wan22FunControlToVideo: start_image exposed + spatial inpaint mask fix'); \
+"
 
 # ---------- Entrypoint script ----------
 COPY scripts/comfyui-start.sh /comfyui/start.sh

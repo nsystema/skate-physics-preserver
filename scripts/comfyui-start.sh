@@ -3,7 +3,7 @@
 # ComfyUI Entrypoint — Downloads models on first start, then launches server.
 #
 # Models are stored in /comfyui/models/ which should be a Docker volume so
-# they persist across container restarts (~8 GB total download on first run).
+# they persist across container restarts (~10 GB total download on first run).
 # =============================================================================
 set -euo pipefail
 
@@ -16,17 +16,17 @@ declare -A MODELS
 declare -A MODEL_URLS
 declare -A MODEL_RENAME
 
-# 1. UNET: Wan 2.1 VACE 1.3B GGUF Q8  (~2.3 GB)
-MODELS[unet]="$MODELS_DIR/unet/wan2.1_vace_1.3B_Q8_0.gguf"
-MODEL_URLS[unet]="https://huggingface.co/samuelchristlie/Wan2.1-VACE-1.3B-GGUF/resolve/main/Wan2.1-VACE-1.3B-Q8_0.gguf"
+# 1. UNET: Wan 2.2 Fun 5B Control GGUF Q4_K_M  (~3.4 GB)
+MODELS[unet]="$MODELS_DIR/unet/Wan2.2-Fun-5B-Control-Q4_K_M.gguf"
+MODEL_URLS[unet]="https://huggingface.co/QuantStack/Wan2.2-Fun-5B-Control-GGUF/resolve/main/Wan2.2-Fun-5B-Control-Q4_K_M.gguf"
 
 # 2. CLIP: UMT5-XXL FP8  (~6.7 GB)
 MODELS[clip]="$MODELS_DIR/clip/umt5_xxl_fp8_e4m3fn.safetensors"
 MODEL_URLS[clip]="https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
 
-# 3. VAE: Wan 2.1 VAE  (~254 MB)
-MODELS[vae]="$MODELS_DIR/vae/wan_2.1_vae.safetensors"
-MODEL_URLS[vae]="https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors"
+# 3. VAE: Wan 2.2 VAE  (~1.4 GB, 48-channel latent space)
+MODELS[vae]="$MODELS_DIR/vae/wan2.2_vae.safetensors"
+MODEL_URLS[vae]="https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan2.2_vae.safetensors"
 
 
 # ---- Download helper ----

@@ -891,23 +891,15 @@ a { color: var(--primary-h); text-decoration: none; }
       </small>
     </div>
 
-    <!-- Skater Prompt -->
+    <!-- Unified Prompt (Fun Control) -->
     <div class="form-group">
-      <label class="form-label">Skater / Character Prompt</label>
-      <textarea id="skater-prompt" class="form-textarea" rows="2"
-        placeholder="e.g. cyberpunk samurai warrior, dynamic pose, cinematic lighting"></textarea>
+      <label class="form-label">Reskin Prompt</label>
+      <textarea id="skater-prompt" class="form-textarea" rows="3"
+        placeholder="e.g. cyberpunk samurai warrior riding a neon hoverboard, cinematic lighting, futuristic cityscape"></textarea>
       <small style="color:var(--text-muted); display:block; margin-top:3px;">
-        Describes how the skater should be reskinned. Guided by the DWPose skeleton.
-      </small>
-    </div>
-
-    <!-- Skateboard Prompt -->
-    <div class="form-group">
-      <label class="form-label">Skateboard / Board Prompt</label>
-      <textarea id="skateboard-prompt" class="form-textarea" rows="2"
-        placeholder="e.g. neon hoverboard with glowing edges, futuristic"></textarea>
-      <small style="color:var(--text-muted); display:block; margin-top:3px;">
-        Describes how the skateboard should be reskinned. Guided by the board mask shape.
+        Describe the new appearance for the masked regions (skater + skateboard).
+        The rest of the video is preserved from the original. Fun Control uses your
+        source video as context with pose guidance so motion and structure are maintained.
       </small>
     </div>
 
@@ -1594,17 +1586,12 @@ async function startComfyUIManually() {
 }
 
 async function startGeneration() {
-  const skaterPrompt = $('#skater-prompt').value.trim();
-  const skateboardPrompt = $('#skateboard-prompt').value.trim();
+  const reskinPrompt = $('#skater-prompt').value.trim();
   const negativePrompt = $('#negative-prompt').value.trim();
   const server = $('#comfyui-server').value.trim();
 
-  if (!skaterPrompt) {
-    toast('Please enter a skater/character prompt.');
-    return;
-  }
-  if (!skateboardPrompt) {
-    toast('Please enter a skateboard/board prompt.');
+  if (!reskinPrompt) {
+    toast('Please enter a reskin prompt describing the new appearance.');
     return;
   }
 
@@ -1613,8 +1600,8 @@ async function startGeneration() {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
-        skater_prompt: skaterPrompt,
-        skateboard_prompt: skateboardPrompt,
+        skater_prompt: reskinPrompt,
+        skateboard_prompt: '',
         negative_prompt: negativePrompt,
         server: server,
       }),

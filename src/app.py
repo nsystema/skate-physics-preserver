@@ -89,7 +89,7 @@ state = {
     "comfyui_path": os.environ.get("COMFYUI_PATH", ""),  # path to ComfyUI install dir
     "comfyui_process": None,   # subprocess.Popen if we auto-launched ComfyUI
     "comfyui_autostarted": False,
-    "workflow_path": "./workflows/vace_template.json",
+    "workflow_path": "./workflows/fun_control_template.json",
     "gen_status": "idle",      # idle | running | complete | error
     "gen_progress": 0,
     "gen_message": "",
@@ -698,10 +698,8 @@ def start_generation():
                                "blurry, distorted, deformed, low quality").strip()
     server = data.get("server", state["comfyui_server"])
 
-    if not skater_prompt:
-        return jsonify({"error": "Skater prompt is required."}), 400
-    if not skateboard_prompt:
-        return jsonify({"error": "Skateboard prompt is required."}), 400
+    if not skater_prompt and not skateboard_prompt:
+        return jsonify({"error": "Reskin prompt is required."}), 400
 
     state["comfyui_server"] = server
     state["gen_status"] = "running"
@@ -1276,7 +1274,7 @@ def main():
                          "Enables auto-start when ComfyUI isn't running. "
                          "Also reads COMFYUI_PATH env var.")
     ap.add_argument("--workflow",
-                    default="./workflows/vace_template.json",
+                    default="./workflows/fun_control_template.json",
                     help="ComfyUI workflow template JSON")
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--no-browser", action="store_true",

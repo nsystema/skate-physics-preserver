@@ -1,28 +1,41 @@
 #!/usr/bin/env python3
 """
-generate_reskin.py - Headless ComfyUI Generative Orchestrator
-==============================================================
+generate_reskin.py - Headless ComfyUI Generative Orchestrator (Fun Control)
+==============================================================================
 Usage:
   python src/generate_reskin.py \\
     --source-video input.mp4 \\
     --masks-dir output/mask_skateboard \\
+    --skater-masks-dir output/mask_skater \\
     --poses-dir output/pose_skater \\
     --positive-prompt "cyberpunk samurai riding a neon hoverboard" \\
     --negative-prompt "blurry, distorted, low quality" \\
     --output-dir output/generated
 
-Workflow:
-  1. Uploads source video + reference assets to ComfyUI
-  2. Loads & mutates a template workflow JSON
-  3. Injects prompts, file paths, and random seed
-  4. Submits to ComfyUI headless server via HTTP POST
-  5. Monitors progress via WebSocket
-  6. Downloads the generated video on completion
+Architecture (Fun Control — Generate + Post-Composite):
+  Two-step approach using Wan22FunControlToVideo:
+    Step 1 — GENERATE: The model creates a fully new video guided by:
+      - control_video: DWPose skeleton frames for motion/pose guidance.
+      - text prompt: describes the desired character/skateboard appearance.
+    Step 2 — POST-COMPOSITE: The generated character regions are blended
+      onto the original video's background using the segmentation masks:
+      - Where mask=1 (skater/skateboard): take from generated video
+      - Where mask=0 (background): keep from original video
+
+Pipeline:
+  1. Reads source video dimensions and calculates VAE-compatible target
+     resolution (nearest multiple of 16, capped at 480px short side).
+  2. Uploads source video + masks + poses to ComfyUI.
+  3. Injects dynamic resolution, unified prompt, and file paths into the
+     Fun Control workflow template.
+  4. Submits to ComfyUI headless server and monitors via WebSocket.
+  5. Downloads the post-composited video on completion.
 
 Requirements:
   - ComfyUI server running locally: python main.py --listen --lowvram
-  - Custom nodes: VideoHelperSuite, ComfyUI-GGUF, ComfyUI-WanVideoWrapper
-  - Models: Wan 2.1 VACE GGUF (1.3B Q8 for 8GB VRAM)
+  - Custom nodes: VideoHelperSuite, ComfyUI-GGUF
+  - Models: Wan 2.2 Fun 5B Control GGUF (Q4_K_M for 8GB VRAM)
+  - VRAM: Optimized for RTX 3070 (8GB), max 81 frames at ~480p.
 """
 
 import argparse
@@ -216,25 +229,30 @@ class ComfyOrchestrator:
         skater_masks_dir=None,
     ):
         """
-        Execute the full V2V pipeline via ComfyUI API.
+        Execute the full V2V pipeline via ComfyUI API (Fun Control).
 
-        Uses separate prompts for skater and skateboard regions.  The workflow
-        applies each prompt only within the corresponding mask region using
-        ConditioningSetMask, so the model generates contextually-correct
-        content for each object independently.
+        Fun Control architecture (Generate + Post-Composite):
+          Step 1: Wan22FunControlToVideo generates a fully new video:
+            - control_video: DWPose skeleton frames for pose guidance.
+            - Text prompt drives the desired character appearance.
+          Step 2: ImageCompositeMasked blends generated character regions
+            onto the original video background using segmentation masks.
 
         Args:
             workflow_path:      Path to template JSON.
             source_video_path:  Source MP4.
             masks_dir:          Directory of skateboard mask PNGs.
-            poses_dir:          Directory of pose PNGs.
-            skater_prompt:      Text prompt for the skater/character region.
-            skateboard_prompt:  Text prompt for the skateboard/board region.
-            negative_prompt:    Negative prompt (shared for both regions).
+            poses_dir:          Directory of pose PNGs (used as
+                                control_video for Fun Control).
+            skater_prompt:      Text prompt for the skater/character.
+            skateboard_prompt:  Text prompt for the skateboard/board.
+                                Combined with skater_prompt into a unified
+                                prompt for the Fun Control model.
+            negative_prompt:    Negative prompt.
             output_dir:         Where to copy the result.
             ref_image_path:     Optional reference image for style guidance.
-            skater_masks_dir:   Directory of skater mask PNGs (required for
-                                dual-region conditioning).
+            skater_masks_dir:   Directory of skater mask PNGs (combined with
+                                skateboard masks for white-out inpainting).
         """
         # ----- Load workflow template -----
         with open(workflow_path, "r", encoding="utf-8") as f:
@@ -243,16 +261,19 @@ class ComfyOrchestrator:
         print(f"[WORKFLOW] Loaded template: {workflow_path}")
         self._notify("uploading", "Workflow loaded, uploading assets...", 0.05)
 
-        # ----- Read source video FPS for workflow sync -----
+        # ----- Read source video metadata for workflow sync -----
         video_fps = 24.0  # safe default
+        video_w, video_h = 0, 0
         try:
             cap = cv2.VideoCapture(source_video_path)
             if cap.isOpened():
                 video_fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
+                video_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                video_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             cap.release()
-            print(f"[VIDEO] Native FPS: {video_fps:.1f}")
+            print(f"[VIDEO] Native: {video_w}x{video_h} @ {video_fps:.1f} FPS")
         except Exception:
-            print("[VIDEO] Could not read FPS, using default 24")
+            print("[VIDEO] Could not read metadata, using defaults")
 
         # ----- Upload assets -----
         print("\n--- Uploading Assets ---")
@@ -261,7 +282,7 @@ class ComfyOrchestrator:
 
         _upload_cap = self.MAX_GEN_FRAMES  # only upload what the model will use
 
-        self._notify("uploading", "Uploading skateboard mask sequence...", 0.12)
+        self._notify("uploading", "Uploading skateboard mask sequence...", 0.15)
         mask_subfolder, _ = upload_image_sequence(
             self.server_addr, masks_dir, "mask_skateboard",
             max_frames=_upload_cap,
@@ -270,7 +291,7 @@ class ComfyOrchestrator:
         # Upload skater masks if available
         skater_mask_subfolder = None
         if skater_masks_dir and os.path.isdir(skater_masks_dir):
-            self._notify("uploading", "Uploading skater mask sequence...", 0.18)
+            self._notify("uploading", "Uploading skater mask sequence...", 0.22)
             skater_mask_subfolder, _ = upload_image_sequence(
                 self.server_addr, skater_masks_dir, "mask_skater",
                 max_frames=_upload_cap,
@@ -278,11 +299,16 @@ class ComfyOrchestrator:
         else:
             print("[WARN] No skater masks directory provided — skater will NOT be inpainted.")
 
-        self._notify("uploading", "Uploading pose sequence...", 0.25)
-        pose_subfolder, _ = upload_image_sequence(
-            self.server_addr, poses_dir, "pose_skater",
-            max_frames=_upload_cap,
-        )
+        # Upload pose sequences (used as control_video for Fun Control)
+        pose_subfolder = None
+        if poses_dir and os.path.isdir(poses_dir):
+            self._notify("uploading", "Uploading pose skeleton sequence...", 0.28)
+            pose_subfolder, _ = upload_image_sequence(
+                self.server_addr, poses_dir, "pose_skater",
+                max_frames=_upload_cap,
+            )
+        else:
+            print("[WARN] No pose directory provided — control_video will be empty.")
 
         img_meta = None
         if ref_image_path and os.path.isfile(ref_image_path):
@@ -305,13 +331,15 @@ class ComfyOrchestrator:
             vid_meta=vid_meta,
             img_meta=img_meta,
             mask_subfolder=mask_subfolder,
-            pose_subfolder=pose_subfolder,
             skater_prompt=skater_prompt,
             skateboard_prompt=skateboard_prompt,
             negative_prompt=negative_prompt,
             skater_mask_subfolder=skater_mask_subfolder,
+            pose_subfolder=pose_subfolder,
             video_fps=video_fps,
             total_video_frames=_total_frames,
+            source_width=video_w,
+            source_height=video_h,
         )
 
         # ----- Connect WebSocket -----
@@ -343,16 +371,64 @@ class ComfyOrchestrator:
     # Internal methods
     # ------------------------------------------------------------------
 
-    # Maximum frames the model should process (Wan 2.1 on 8GB VRAM)
+    # Maximum frames the model should process (Wan 2.2 Fun 5B on 8GB VRAM)
     MAX_GEN_FRAMES = 81
 
+    # ------------------------------------------------------------------
+    # Dynamic resolution helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _calculate_target_dims(width, height, max_short_side=480):
+        """
+        Calculate VAE-compatible target dimensions preserving aspect ratio.
+
+        Logic:
+          - Vertical video (w < h): target_w = max_short_side, scale h.
+          - Horizontal video (w >= h): target_h = max_short_side, scale w.
+          - Both dimensions rounded to the nearest multiple of 16 (VAE req).
+
+        Example: 1080x1920 (YouTube Short) -> 480x848
+        """
+        aspect = width / height
+
+        if width < height:
+            # Vertical / Short
+            target_w = max_short_side
+            target_h = max_short_side / aspect
+        else:
+            # Horizontal / Landscape
+            target_h = max_short_side
+            target_w = max_short_side * aspect
+
+        # Round to nearest multiple of 16 (required by VAE)
+        target_w = round(target_w / 16) * 16
+        target_h = round(target_h / 16) * 16
+
+        return int(target_w), int(target_h)
+
+    # ------------------------------------------------------------------
+    # Workflow injection  (Fun Control topology)
+    # ------------------------------------------------------------------
+
     def _inject_workflow(
-        self, workflow, vid_meta, img_meta, mask_subfolder, pose_subfolder,
+        self, workflow, vid_meta, img_meta, mask_subfolder,
         skater_prompt, skateboard_prompt, negative_prompt,
-        skater_mask_subfolder=None, video_fps=24.0,
-        total_video_frames=0,
+        skater_mask_subfolder=None, pose_subfolder=None,
+        video_fps=24.0,
+        total_video_frames=0, source_width=0, source_height=0,
     ):
-        """Dynamically inject file paths, prompts, and FPS into the workflow JSON."""
+        """
+        Dynamically inject file paths, prompts, dimensions, and FPS into
+        the Fun Control workflow JSON.
+
+        Fun Control architecture (Generate + Post-Composite):
+          Wan22FunControlToVideo.control_video = DWPose skeleton frames
+          for explicit pose guidance.  Text prompt drives appearance.
+
+          Masks are used AFTER generation: ImageCompositeMasked
+          blends the generated character onto the original background.
+        """
 
         # --- Compute frame cap (align video + mask + pose loaders) ---
         frame_cap = self.MAX_GEN_FRAMES
@@ -361,28 +437,40 @@ class ComfyOrchestrator:
         print(f"  [FRAMES] Capping all loaders to {frame_cap} frames "
               f"(source has {total_video_frames})")
 
+        # --- Calculate target resolution ---
+        if source_width > 0 and source_height > 0:
+            target_w, target_h = self._calculate_target_dims(
+                source_width, source_height
+            )
+        else:
+            # Fallback for unknown dimensions
+            target_w, target_h = 480, 848
+        print(f"  [RESOLUTION] Source {source_width}x{source_height} -> "
+              f"Target {target_w}x{target_h}")
+
         # --- Source Video Loader ---
         try:
             vid_node = find_node_safe(workflow, "VHS_LoadVideo", "Source Video")
             workflow[vid_node]["inputs"]["video"] = vid_meta["name"]
-            # Sync force_rate to native FPS so frame count matches masks/poses
             workflow[vid_node]["inputs"]["force_rate"] = round(video_fps, 2)
-            # Enforce frame cap for VRAM; keep native resolution to match masks
             workflow[vid_node]["inputs"]["frame_load_cap"] = frame_cap
-            workflow[vid_node]["inputs"]["force_size"] = "Disabled"
+            workflow[vid_node]["inputs"]["force_size"] = "Custom"
+            workflow[vid_node]["inputs"]["custom_width"] = target_w
+            workflow[vid_node]["inputs"]["custom_height"] = target_h
             print(f"  [OK] Source video -> node {vid_node} "
-                  f"(fps={video_fps:.1f}, cap={frame_cap}, native res)")
+                  f"(fps={video_fps:.1f}, cap={frame_cap}, "
+                  f"{target_w}x{target_h})")
         except ValueError:
             print("  [SKIP] No VHS_LoadVideo node found")
 
         # --- Skateboard Mask Sequence Loader ---
-        # Try new title first, fall back to legacy title
         for title in ["Mask Sequence (Skateboard)", "Mask Sequence"]:
             try:
                 mask_node = find_node_safe(workflow, "VHS_LoadImages", title)
                 workflow[mask_node]["inputs"]["directory"] = mask_subfolder
                 workflow[mask_node]["inputs"]["image_load_cap"] = frame_cap
-                print(f"  [OK] Skateboard mask sequence -> node {mask_node} (cap={frame_cap})")
+                print(f"  [OK] Skateboard mask sequence -> node {mask_node} "
+                      f"(cap={frame_cap})")
                 break
             except ValueError:
                 continue
@@ -395,73 +483,110 @@ class ComfyOrchestrator:
                 skater_mask_node = find_node_safe(
                     workflow, "VHS_LoadImages", "Mask Sequence (Skater)"
                 )
-                workflow[skater_mask_node]["inputs"]["directory"] = skater_mask_subfolder
+                workflow[skater_mask_node]["inputs"]["directory"] = (
+                    skater_mask_subfolder
+                )
                 workflow[skater_mask_node]["inputs"]["image_load_cap"] = frame_cap
-                print(f"  [OK] Skater mask sequence -> node {skater_mask_node} (cap={frame_cap})")
+                print(f"  [OK] Skater mask sequence -> node "
+                      f"{skater_mask_node} (cap={frame_cap})")
             except ValueError:
                 print("  [SKIP] No skater mask loader node found in workflow")
 
-        # --- Pose Sequence Loader ---
-        try:
-            pose_node = find_node_safe(workflow, "VHS_LoadImages", "Pose Sequence")
-            workflow[pose_node]["inputs"]["directory"] = pose_subfolder
-            workflow[pose_node]["inputs"]["image_load_cap"] = frame_cap
-            print(f"  [OK] Pose sequence -> node {pose_node} (cap={frame_cap})")
-        except ValueError:
+        # --- Pose Sequence Loader (control_video for Fun Control) ---
+        if pose_subfolder:
             try:
-                pose_node = find_node_safe(workflow, "LoadImageSequence", "Pose Sequence")
+                pose_node = find_node_safe(
+                    workflow, "VHS_LoadImages", "Pose Sequence (Skater)"
+                )
                 workflow[pose_node]["inputs"]["directory"] = pose_subfolder
-                print(f"  [OK] Pose sequence -> node {pose_node}")
+                workflow[pose_node]["inputs"]["image_load_cap"] = frame_cap
+                print(f"  [OK] Pose sequence -> node {pose_node} "
+                      f"(cap={frame_cap})")
             except ValueError:
-                print("  [SKIP] No pose loader node found")
+                print("  [SKIP] No pose loader node found in workflow")
+
+        # --- Inject target dimensions into ALL ImageScale "Resize *" nodes ---
+        for node_id, node_data in workflow.items():
+            meta_title = node_data.get("_meta", {}).get("title", "")
+            if (meta_title.startswith("Resize ")
+                    and node_data.get("class_type") == "ImageScale"):
+                node_data["inputs"]["width"] = target_w
+                node_data["inputs"]["height"] = target_h
+                print(f"  [OK] {meta_title} -> node {node_id} "
+                      f"({target_w}x{target_h})")
+
+        # --- Inject dims + length into Wan22FunControlToVideo node ---
+        try:
+            ctrl_node = find_node_safe(
+                workflow, "Wan22FunControlToVideo", "Fun Control Conditioning"
+            )
+            workflow[ctrl_node]["inputs"]["width"] = target_w
+            workflow[ctrl_node]["inputs"]["height"] = target_h
+            workflow[ctrl_node]["inputs"]["length"] = frame_cap
+            print(f"  [OK] Fun Control dims -> node {ctrl_node} "
+                  f"({target_w}x{target_h}, length={frame_cap})")
+        except ValueError:
+            print("  [SKIP] No Wan22FunControlToVideo node found")
 
         # --- Reference Image (optional) ---
         if img_meta:
             try:
-                img_node = find_node_safe(workflow, "LoadImage", "Reference Image")
+                img_node = find_node_safe(
+                    workflow, "LoadImage", "Reference Image"
+                )
                 workflow[img_node]["inputs"]["image"] = img_meta["name"]
                 print(f"  [OK] Reference image -> node {img_node}")
             except ValueError:
                 print("  [SKIP] No reference image node found")
 
-        # --- Text Prompts (dual-region: separate skater + skateboard) ---
-        try:
-            skater_node = find_node_safe(workflow, "CLIPTextEncode", "Skater Prompt")
-            workflow[skater_node]["inputs"]["text"] = skater_prompt
-            print(f"  [OK] Skater prompt -> node {skater_node}")
-        except ValueError:
-            print("  [SKIP] No skater prompt node found")
+        # --- Unified Prompt (single positive prompt for Fun Control) ---
+        # Combine skater + skateboard descriptions into one prompt
+        prompt_parts = [p for p in [skater_prompt, skateboard_prompt]
+                        if p and p.strip()]
+        unified_prompt = ", ".join(prompt_parts) if prompt_parts else (
+            "high quality video"
+        )
 
         try:
-            board_node = find_node_safe(workflow, "CLIPTextEncode", "Skateboard Prompt")
-            workflow[board_node]["inputs"]["text"] = skateboard_prompt
-            print(f"  [OK] Skateboard prompt -> node {board_node}")
+            pos_node = find_node_safe(
+                workflow, "CLIPTextEncode", "Positive Prompt"
+            )
+            workflow[pos_node]["inputs"]["text"] = unified_prompt
+            print(f"  [OK] Unified prompt -> node {pos_node}")
         except ValueError:
-            print("  [SKIP] No skateboard prompt node found")
+            print("  [SKIP] No Positive Prompt node found")
 
         try:
-            neg_node = find_node_safe(workflow, "CLIPTextEncode", "Negative Prompt")
+            neg_node = find_node_safe(
+                workflow, "CLIPTextEncode", "Negative Prompt"
+            )
             workflow[neg_node]["inputs"]["text"] = negative_prompt
             print(f"  [OK] Negative prompt -> node {neg_node}")
         except ValueError:
             print("  [SKIP] No negative prompt node found")
 
-        # --- Output Video FPS ---
-        try:
-            out_node = find_node_safe(workflow, "VHS_VideoCombine", "Output Video")
-            workflow[out_node]["inputs"]["frame_rate"] = round(video_fps, 2)
-            print(f"  [OK] Output frame_rate -> node {out_node} ({video_fps:.1f}fps)")
-        except ValueError:
-            pass  # non-critical
+        # --- Output Video FPS (apply to all VHS_VideoCombine nodes) ---
+        for node_id, node_data in workflow.items():
+            if node_data.get("class_type") == "VHS_VideoCombine":
+                node_data["inputs"]["frame_rate"] = round(video_fps, 2)
+                meta_title = node_data.get("_meta", {}).get("title", "VHS_VideoCombine")
+                print(f"  [OK] {meta_title} frame_rate -> node {node_id} "
+                      f"({video_fps:.1f}fps)")
 
         # --- Random Seeds (set unique seed on every sampler node) ---
-        for sampler_class in ["KSampler", "WanVACESampler", "KSamplerAdvanced", "SamplerCustom"]:
+        for sampler_class in [
+            "Wan22FunControlToVideo",
+            "KSampler", "KSamplerAdvanced", "SamplerCustom",
+        ]:
             for node_id, node_data in workflow.items():
                 if node_data.get("class_type") == sampler_class:
                     if "seed" in node_data["inputs"]:
                         node_data["inputs"]["seed"] = random.randint(1, 10**9)
-                        title = node_data.get("_meta", {}).get("title", sampler_class)
-                        print(f"  [OK] Random seed -> node {node_id} ({title})")
+                        title = node_data.get("_meta", {}).get(
+                            "title", sampler_class
+                        )
+                        print(f"  [OK] Random seed -> node {node_id} "
+                              f"({title})")
 
     def _queue_prompt(self, workflow):
         """Submit the workflow to ComfyUI and return the prompt_id."""
@@ -480,8 +605,9 @@ class ComfyOrchestrator:
 
     def _monitor_execution(self, prompt_id):
         """Listen on WebSocket for progress and completion."""
-        # Track progress floor for multi-pass workflows (two KSampler passes).
-        # Each pass resets step counters, so we need a floor that only increases.
+        # Track progress floor — monotonically increasing so the UI never
+        # jumps backward.  Works for single-pass Fun Control and legacy
+        # multi-pass workflows.
         _progress_floor = 0.38
         while True:
             try:
@@ -550,7 +676,9 @@ class ComfyOrchestrator:
 
     def _retrieve_output(self, prompt_id, output_dir):
         """
-        Fetch the output video from ComfyUI history and copy to output_dir.
+        Fetch ALL output videos from ComfyUI history and copy to output_dir.
+        Returns the primary output (the composited video from "Output Video"
+        node, or the first video if no match).
         """
         os.makedirs(output_dir, exist_ok=True)
 
@@ -562,9 +690,15 @@ class ComfyOrchestrator:
             raise RuntimeError(f"No history found for prompt_id: {prompt_id}")
 
         outputs = history[prompt_id]["outputs"]
+        prompt_info = history[prompt_id].get("prompt", [None, None, {}])
+        # prompt_info[2] is the workflow dict if available
+        workflow_snapshot = prompt_info[2] if len(prompt_info) > 2 else {}
 
-        # Search for video output (VHS_VideoCombine typically outputs 'gifs')
-        for _node_id, node_output in outputs.items():
+        # Download ALL output files, track the primary (composited) one
+        primary_output = None
+        all_downloaded = []
+
+        for node_id, node_output in outputs.items():
             for key in ["gifs", "videos", "images"]:
                 if key in node_output:
                     items = node_output[key]
@@ -572,7 +706,32 @@ class ComfyOrchestrator:
                         items = [items]
                     for item in items:
                         if isinstance(item, dict) and "filename" in item:
-                            return self._download_file(item, output_dir)
+                            downloaded = self._download_file(item, output_dir)
+                            all_downloaded.append((node_id, downloaded))
+
+                            # Identify primary output by node title or
+                            # filename prefix
+                            node_meta = {}
+                            if isinstance(workflow_snapshot, dict):
+                                node_meta = workflow_snapshot.get(
+                                    node_id, {}
+                                ).get("_meta", {})
+                            title = node_meta.get("title", "")
+                            fname = item.get("filename", "")
+
+                            if (title == "Output Video"
+                                    or fname.startswith("skate_reskin")):
+                                primary_output = downloaded
+
+        if all_downloaded:
+            print(f"[OUTPUT] Downloaded {len(all_downloaded)} output(s)")
+            for nid, path in all_downloaded:
+                print(f"  Node {nid}: {os.path.basename(path)}")
+
+        if primary_output:
+            return primary_output
+        if all_downloaded:
+            return all_downloaded[0][1]
 
         print("[WARN] No video output found in history. Check ComfyUI output folder.")
         return None
@@ -604,30 +763,36 @@ class ComfyOrchestrator:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate reskinned video via headless ComfyUI"
+        description="Generate reskinned video via headless ComfyUI (Fun Control)"
     )
     parser.add_argument("--source-video", required=True, help="Source video path")
     parser.add_argument("--masks-dir", required=True, help="Directory of skateboard mask PNGs")
     parser.add_argument("--skater-masks-dir", default=None,
-                        help="Directory of skater mask PNGs (enables dual-mask inpainting)")
+                        help="Directory of skater mask PNGs (combined with skateboard masks for white-out inpainting)")
     parser.add_argument("--poses-dir", required=True, help="Directory of pose PNGs")
     parser.add_argument(
-        "--skater-prompt", required=True,
-        help="Text prompt for the skater/character region "
-             "(e.g., 'cyberpunk samurai warrior, dynamic pose')"
+        "--positive-prompt", default=None,
+        help="Unified positive prompt for the entire scene "
+             "(e.g., 'cyberpunk samurai riding a neon hoverboard'). "
+             "Overrides --skater-prompt / --board-prompt if provided."
     )
     parser.add_argument(
-        "--board-prompt", required=True,
-        help="Text prompt for the skateboard/board region "
-             "(e.g., 'neon hoverboard with glowing edges')"
+        "--skater-prompt", default="",
+        help="Text prompt for the skater/character "
+             "(combined with --board-prompt into a unified prompt)"
+    )
+    parser.add_argument(
+        "--board-prompt", default="",
+        help="Text prompt for the skateboard/board "
+             "(combined with --skater-prompt into a unified prompt)"
     )
     parser.add_argument(
         "--negative-prompt", default="blurry, distorted, low quality, deformed",
-        help="Negative prompt (shared for both regions)"
+        help="Negative prompt"
     )
     parser.add_argument("--ref-image", default=None, help="Optional reference image for style")
     parser.add_argument(
-        "--workflow", default="./workflows/vace_template.json",
+        "--workflow", default="./workflows/fun_control_template.json",
         help="ComfyUI workflow template JSON"
     )
     parser.add_argument("--server", default="127.0.0.1:8188", help="ComfyUI server address")
@@ -637,6 +802,19 @@ def main():
         help="Only check if ComfyUI server is reachable"
     )
     args = parser.parse_args()
+
+    # Build unified prompt from CLI args
+    if args.positive_prompt:
+        unified_skater = args.positive_prompt
+        unified_board = ""
+    else:
+        unified_skater = args.skater_prompt
+        unified_board = args.board_prompt
+        if not unified_skater and not unified_board:
+            parser.error(
+                "Provide --positive-prompt or at least one of "
+                "--skater-prompt / --board-prompt."
+            )
 
     orchestrator = ComfyOrchestrator(server_addr=args.server)
 
@@ -673,11 +851,16 @@ def main():
     # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
+    # Display the unified prompt
+    if unified_board:
+        display_prompt = f"{unified_skater}, {unified_board}"
+    else:
+        display_prompt = unified_skater
+
     print("\n" + "=" * 60)
-    print("  GENERATIVE RESKINNING (Dual-Region)")
+    print("  GENERATIVE RESKINNING (Fun Control)")
     print("=" * 60)
-    print(f"  Skater  : {args.skater_prompt}")
-    print(f"  Board   : {args.board_prompt}")
+    print(f"  Prompt  : {display_prompt}")
     print(f"  Negative: {args.negative_prompt}")
     print(f"  Server  : {args.server}")
     print()
@@ -687,8 +870,8 @@ def main():
         source_video_path=args.source_video,
         masks_dir=args.masks_dir,
         poses_dir=args.poses_dir,
-        skater_prompt=args.skater_prompt,
-        skateboard_prompt=args.board_prompt,
+        skater_prompt=unified_skater,
+        skateboard_prompt=unified_board,
         negative_prompt=args.negative_prompt,
         output_dir=args.output_dir,
         ref_image_path=args.ref_image,

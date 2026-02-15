@@ -2,10 +2,10 @@
   "1": {
     "class_type": "UnetLoaderGGUF",
     "inputs": {
-      "unet_name": "wan2.1_vace_1.3B_Q8_0.gguf"
+      "unet_name": "Wan2.2-Fun-5B-Control-Q4_K_M.gguf"
     },
     "_meta": {
-      "title": "Load VACE Model (GGUF)"
+      "title": "Load Fun Control Model (GGUF)"
     }
   },
   "2": {
@@ -21,7 +21,7 @@
   "3": {
     "class_type": "VAELoader",
     "inputs": {
-      "vae_name": "wan_2.1_vae.safetensors"
+      "vae_name": "wan2.2_vae.safetensors"
     },
     "_meta": {
       "title": "Load VAE"
@@ -89,6 +89,18 @@
       "title": "Mask Sequence (Skater)"
     }
   },
+  "30": {
+    "class_type": "VHS_LoadImages",
+    "inputs": {
+      "directory": "pose_skater",
+      "image_load_cap": 81,
+      "skip_first_images": 0,
+      "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Pose Sequence (Skater)"
+    }
+  },
 
   "10": {
     "class_type": "ImageScale",
@@ -127,6 +139,19 @@
     },
     "_meta": {
       "title": "Resize Masks (Skater)"
+    }
+  },
+  "31": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": ["30", 0],
+      "upscale_method": "lanczos",
+      "width": 480,
+      "height": 848,
+      "crop": "disabled"
+    },
+    "_meta": {
+      "title": "Resize Poses"
     }
   },
 
@@ -189,7 +214,7 @@
   },
 
   "19": {
-    "class_type": "WanVaceToVideo",
+    "class_type": "Wan22FunControlToVideo",
     "inputs": {
       "positive": ["4", 0],
       "negative": ["5", 0],
@@ -198,12 +223,10 @@
       "height": 848,
       "length": 81,
       "batch_size": 1,
-      "strength": 1.0,
-      "control_video": ["10", 0],
-      "control_masks": ["18", 0]
+      "control_video": ["31", 0]
     },
     "_meta": {
-      "title": "VACE Conditioning"
+      "title": "Fun Control Conditioning"
     }
   },
 
@@ -222,7 +245,7 @@
       "denoise": 1.0
     },
     "_meta": {
-      "title": "VACE Sampler"
+      "title": "Fun Control Sampler"
     }
   },
 
@@ -233,14 +256,29 @@
       "vae": ["3", 0]
     },
     "_meta": {
-      "title": "Decode Output"
+      "title": "Decode Generated Video"
+    }
+  },
+
+  "27": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "destination": ["10", 0],
+      "source": ["22", 0],
+      "mask": ["18", 0],
+      "x": 0,
+      "y": 0,
+      "resize_source": false
+    },
+    "_meta": {
+      "title": "Post-Composite (Generated onto Original)"
     }
   },
 
   "20": {
     "class_type": "VHS_VideoCombine",
     "inputs": {
-      "images": ["22", 0],
+      "images": ["27", 0],
       "frame_rate": 24,
       "loop_count": 0,
       "filename_prefix": "skate_reskin",

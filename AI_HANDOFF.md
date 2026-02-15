@@ -755,7 +755,7 @@ This specification outlines a state-of-the-art solution for extracting semantic 
 
 The generative AI landscape has transitioned from static image synthesis to high-fidelity video generation, driven by the emergence of Diffusion Transformers (DiT) and advanced latent diffusion architectures. A critical frontier in this evolution is Video-to-Video (V2V) synthesis, where the objective is not merely to hallucinate new content, but to transform existing footage with precise semantic and structural control. This report provides a comprehensive technical specification for an optimal **ComfyUI workflow** designed to execute V2V tasks conditioned simultaneously on a **Mask** (isolating specific objects for transformation) and a **Pose** (preserving or retargeting human motion).
 
-Our analysis indicates that while latent diffusion models like **FLUX.1** paired with **AnimateDiff** offer superior texture fidelity, they often struggle with the "competing attention" problem inherent in dual-conditioning scenarios. Specifically, applying a dense pose control alongside a sparse region mask can lead to temporal incoherence and artifacting in non-native video architectures. Consequently, this report identifies **Wan 2.1 VACE (Video-Audio-Control-Edit)** and **CogVideoX-Fun** as the optimal architectural choices for this specific requirement, due to their unified attention mechanisms that ingest masks and control signals as native multimodal tensors.1
+Our analysis indicates that while latent diffusion models like **FLUX.1** paired with **AnimateDiff** offer superior texture fidelity, they often struggle with the "competing attention" problem inherent in dual-conditioning scenarios. Specifically, applying a dense pose control alongside a sparse region mask can lead to temporal incoherence and artifacting in non-native video architectures. Consequently, this report identifies **Wan 2.2 Fun Control** and **CogVideoX-Fun** as the optimal architectural choices for this specific requirement, due to their unified attention mechanisms that ingest masks and control signals as native multimodal tensors.1
 
 The proposed solution involves a modular ComfyUI graph that integrates **Segment Anything Model 2 (SAM2)** for temporal object isolation and **DWPose** for kinematic feature extraction. This workflow is orchestrated by a robust **Python backend** capable of headless execution, dynamic parameter injection, and asset management via the ComfyUI API. This document details the theoretical underpinnings, the precise node-graph topology, and the software engineering specifications required to deploy this system in a production environment.
 
@@ -783,7 +783,7 @@ In standard workflows, these conditions are often applied sequentially or via se
 * The pose stick figure might "bleed" into the texture of the generated object.  
 * The mask boundary might cut off a limb that the pose signal indicates should be present.
 
-The optimal solution, therefore, requires a **Unified Conditioning Architecture** where the model accepts \`\` as a single concatenated input, allowing the attention mechanism to resolve conflicts natively during the denoising steps. This capability is the primary reason for selecting **Wan 2.1 VACE** and **CogVideoX-Fun** over standard AnimateDiff pipelines for this report.7
+The optimal solution, therefore, requires a **Unified Conditioning Architecture** where the model accepts \`\` as a single concatenated input, allowing the attention mechanism to resolve conflicts natively during the denoising steps. This capability is the primary reason for selecting **Wan 2.2 Fun Control** and **CogVideoX-Fun** over standard AnimateDiff pipelines for this report.7
 
 ## ---
 
@@ -807,21 +807,21 @@ We evaluated three primary architectural approaches for the "Mask \+ Pose" V2V w
 * **Pros:** Native video understanding. The ComfyUI-CogVideoXWrapper 14 provides robust nodes for integrating these features. It allows for "Start Image" and "End Image" conditioning, which is excellent for morphing effects.  
 * **Cons:** Requires managing multiple heavy model files. The "Fun" variants can be unstable with certain prompts, sometimes ignoring the mask if the denoise strength is not perfectly tuned.
 
-### **3.3. Architecture C: Wan 2.1 VACE (The Unified Editor)**
+### **3.3. Architecture C: Wan 2.2 Fun Control (Pose + White-Out Inpainting)**
 
-**Wan 2.1 VACE** (Video-Audio-Control-Edit) is designed specifically for the task described in the prompt: editing video with multimodal constraints.1
+**Wan 2.2 Fun Control** is designed specifically for the task described in the prompt: editing video with multimodal constraints via combined pose and inpainting control.1
 
-* **Mechanism:** It treats the mask and the control video (pose) as fundamental input tensors, not auxiliary injections. It uses a "Pseudo-Masking" technique where the user overlays the mask on the reference input, and the model learns to "heal" the video based on the prompt.15  
-* **Pros:** Best temporal coherence for masked editing. Supports "Any-to-Video" logic. Efficient GGUF quantization allows 14B models to run on consumer hardware.16  
-* **Cons:** The workflow is distinct from standard SD workflows, requiring specific pre-processing (white-out masking) that must be handled carefully in the backend.
+* **Mechanism:** It accepts a `start_image` (source video with masked regions whited out — all frames) and a `control_video` (DWPose skeleton frames). White regions signal "generate here" while preserved pixels provide context. The model fills white regions while following the pose in a single pass.15  
+* **Pros:** Best temporal coherence for masked editing with explicit pose guidance. Supports both inpainting and pose control natively. Efficient GGUF quantization (Q4_K_M) allows the 5B model to run on 8GB VRAM consumer cards.16  
+* **Cons:** The workflow requires specific pre-processing (white-out masking) that must be handled in the ComfyUI workflow graph.
 
 **Recommendation:**
 
-This report prioritizes **Wan 2.1 VACE** as the *optimal* solution for the "Mask \+ Pose" requirement due to its unified architecture, while providing a fallback specification for **CogVideoX-Fun** for users requiring the CogVideo ecosystem.
+This report prioritizes **Wan 2.2 Fun Control** as the *optimal* solution for the "Mask \+ Pose" requirement due to its unified architecture supporting both inpainting and pose control in a single pass, while providing a fallback specification for **CogVideoX-Fun** for users requiring the CogVideo ecosystem.
 
 ## ---
 
-**4\. Detailed Workflow Specification: The "Hybrid-VACE" Pipeline**
+**4\. Detailed Workflow Specification: The "Fun Control" Pipeline**
 
 The optimal workflow is not merely a linear chain of nodes but a sophisticated graph involving parallel preprocessing, signal injection, and latent reconstruction. The following section details the precise topology for the ComfyUI workflow.
 
@@ -830,7 +830,7 @@ The optimal workflow is not merely a linear chain of nodes but a sophisticated g
 The workflow consists of four distinct stages:
 
 1. **Ingestion & Preprocessing:** Loading assets and generating control signals (Masks & Poses) from the source footage.  
-2. **Conditioning Bus:** Formatting these signals into the tensors expected by the VACE model.  
+2. **Conditioning Bus:** Formatting these signals into the tensors expected by the Fun Control model.  
 3. **Generative Core:** The latent denoising loop where the transformation occurs.  
 4. **Reconstruction & Output:** Decoding the latents and ensuring format compliance for the API response.
 
@@ -843,8 +843,8 @@ The system must autonomously derive the mask and pose from the input video. We c
 * **Node:** VHS\_LoadVideo (Video Helper Suite).17  
 * **Parameters:**  
   * force\_rate: **24** (Standardizing frame rate is critical for motion consistency).  
-  * force\_size: **Custom** (Resized to nearest 16px multiple, e.g., 832x480). VACE 2.1 is optimized for 480p/720p aspect ratios.16  
-  * frame\_load\_cap: **81** (VACE processes video in blocks; 81 frames corresponds to \~3.5 seconds at 24fps and fits within typical attention windows).
+  * force\_size: **Custom** (Resized to nearest 16px multiple, e.g., 832x480). Wan 2.2 Fun Control is optimized for 480p/720p aspect ratios.16  
+  * frame\_load\_cap: **81** (Fun Control processes video in blocks; 81 frames corresponds to \~3.5 seconds at 24fps and fits within typical attention windows).
 
 #### **4.2.2. Kinematic Feature Extraction (Pose)**
 
@@ -856,7 +856,7 @@ To constrain the human motion, we extract a skeleton map.
   * detect\_hand: **Enable** (Critical for detailed human interaction).  
   * detect\_face: **Enable** (Prevents face distortion).  
   * resolution: Must match the force\_size of the video loader exactly to prevent spatial drift.  
-* **Output:** A sequence of RGB images depicting the skeletal pose on a black background. This serves as the control\_video input for VACE.
+* **Output:** A sequence of RGB images depicting the skeletal pose on a black background. This serves as the control\_video input for WanFunControlToVideo.
 
 #### **4.2.3. Temporal Segmentation (Mask Generation)**
 
@@ -872,7 +872,7 @@ We use **SAM2 (Segment Anything Model 2\)** for robust object tracking. Unlike s
 
 ### **4.3. Stage 2: The Conditioning Bus**
 
-In this stage, we prepare the inputs for the **Wan 2.1 VACE** model. Unlike SD1.5, which uses a simple "Positive/Negative" prompt, VACE requires a multi-modal input packet.
+In this stage, we prepare the inputs for the **Wan 2.2 Fun Control** model. Unlike SD1.5, which uses a simple "Positive/Negative" prompt, Fun Control requires a multi-modal input packet.
 
 #### **4.3.1. Reference Image Loading**
 
@@ -883,7 +883,7 @@ The user provides a reference image for the target object (e.g., a texture of a 
 
 #### **4.3.2. Pseudo-Masking Preparation**
 
-Wan 2.1 VACE utilizes a unique "white-out" masking strategy for reference inputs.15
+Wan 2.2 Fun Control utilizes a "white-out" masking strategy for reference inputs.15
 
 * **Logic:** We must create a version of the source video where the masked area is replaced by white pixels (or noise), signaling the model to "fill this in."  
 * **Node:** ImageBlend (Comfy Core).  
@@ -892,26 +892,23 @@ Wan 2.1 VACE utilizes a unique "white-out" masking strategy for reference inputs
   2. White Image (Constant).  
   3. Mask (from SAM2).  
 * **Operation:** Blend the White Image onto the Source Video using the Mask as the alpha.  
-* **Result:** A video where the subject is a white silhouette, ready for VACE inpainting.
+* **Result:** A video where the subject is a white silhouette, ready for Fun Control inpainting via the start\_image input.
 
-### **4.4. Stage 3: The Generative Core (WanVaceToVideo)**
+### **4.4. Stage 3: The Generative Core (WanFunControlToVideo)**
 
-This is the heart of the pipeline. We utilize the native WanVaceToVideo node.20
+This is the heart of the pipeline. We utilize the native WanFunControlToVideo node.20
 
 | Input Parameter | Connection / Value | Reasoning |
 | :---- | :---- | :---- |
 | vae | **Wan 2.1 VAE** | Must use the specific 2.1 VAE wan\_2.1\_vae.safetensors. SDXL VAEs will fail.16 |
 | positive | **CLIPTextEncode** | Prompt describing the *New Object* \+ *Human Action* (e.g., "A wizard riding a neon magic carpet"). |
 | negative | **CLIPTextEncode** | Prompt describing artifacts (e.g., "drone, metal, blurring, distortion"). |
-| control\_video | **DWPose Output** | Enforces the kinematic motion of the human. |
-| control\_masks | **SAM2 Output** | Defines the region of transformation (The "Drone" area). |
-| video\_input | **Source Video** | Provides the base latents for the background (unmasked area). |
-| reference\_image | **Target Texture** | Provides the visual identity for the new object. |
-| strength | **0.8 \- 1.0** | High strength is needed to fully replace the object. Lower strength (0.5) would merely blend the carpet texture onto the drone geometry. |
+| start\_image | **White-Out Video** | Source video with masked regions whited out (all frames). White = "generate here." |
+| control\_video | **DWPose Output** | Enforces the kinematic motion of the human via pose skeleton frames. |
 | steps | **20 \- 30** | Sufficient for the flow-matching scheduler used by Wan. |
 | sampler | **UniPC** or **Euler** | Standard reliable samplers for video diffusion. |
 
-**Crucial Insight:** By connecting both control\_video (Pose) and control\_masks (Object), VACE resolves the conflict:
+**Crucial Insight:** By feeding the white-out video as start\_image and pose frames as control\_video, Fun Control resolves the conflict:
 
 * The **Pose** constrains the human figure (even if it overlaps the mask).  
 * The **Mask** constrains the texture replacement (Drone \-\> Carpet).  
@@ -1090,7 +1087,7 @@ Deploying this workflow at scale requires careful consideration of hardware reso
 
 Video generation is extremely VRAM intensive.
 
-* **GGUF Quantization:** For Wan 2.1, it is highly recommended to use the **GGUF** versions of the models (e.g., Wan2.1\_14B\_Q4\_K\_M.gguf). This reduces VRAM requirements for the 14B model from \~40GB (FP16) to roughly **12-14GB**, making it feasible on consumer cards like the RTX 4070 Ti or 3090\.16  
+* **GGUF Quantization:** For Wan 2.2 Fun Control, it is highly recommended to use the **GGUF** versions of the models (e.g., Wan2.2-Fun-5B-Control-Q4\_K\_M.gguf). This reduces VRAM requirements for the 5B model to roughly **~4GB**, making it feasible on consumer cards with 8GB VRAM like the RTX 3070\.16  
 * **Sequential Offloading:** ComfyUI's \--lowvram flag aggressively offloads model layers to system RAM. While this slows down inference, it prevents Out-Of-Memory (OOM) crashes on 12GB cards.
 
 ### **6.2. Context Windowing for Long Videos**
@@ -1101,7 +1098,7 @@ The proposed workflow sets a frame cap of 81 frames. To process longer videos (e
   1. Chunk video into overlapping segments: \[0-80\], \[60-140\], \[120-200\].  
   2. Process each chunk independently via the API.  
   3. **Crossfade Blending:** The backend (or a dedicated ffmpeg post-process) blends the overlapping 20 frames to ensure smooth motion transition.26  
-  * *Note:* Wan 2.1 VACE has context extension capabilities, but they are experimental. The sliding window approach is currently more robust for production.
+  * *Note:* Wan 2.2 Fun Control has context extension capabilities, but they are experimental. The sliding window approach is currently more robust for production.
 
 ### **6.3. Latency vs. Throughput**
 
@@ -1112,7 +1109,7 @@ The proposed workflow sets a frame cap of 81 frames. To process longer videos (e
 
 **7\. Conclusion**
 
-This report has detailed the optimal technical path for executing high-fidelity Video-to-Video transformation conditioned on both masks and poses. By selecting **Wan 2.1 VACE** over traditional FLUX+AnimateDiff combinations, we resolve the fundamental conflict of dual conditioning through a unified multimodal attention architecture.
+This report has detailed the optimal technical path for executing high-fidelity Video-to-Video transformation conditioned on both masks and poses. By selecting **Wan 2.2 Fun Control** over traditional FLUX+AnimateDiff combinations, we resolve the fundamental conflict of dual conditioning through a unified architecture that natively supports both pose control and white-out inpainting in a single pass.
 
 The provided ComfyUI workflow topology—leveraging **SAM2** for robust temporal masking and **DWPose** for kinematic fidelity—provides a stable foundation for professional video editing tasks. Furthermore, the accompanying Python backend specification offers a production-ready blueprint for headless automation, handling the complexities of dynamic asset injection and state management. As the domain evolves, this modular architecture allows for the seamless substitution of the generative core (e.g., upgrading to Wan 2.5 or CogVideoX 2.0) while preserving the robust preprocessing and orchestration layers.
 
@@ -1120,7 +1117,7 @@ The provided ComfyUI workflow topology—leveraging **SAM2** for robust temporal
 
 This report synthesizes technical data from the following research snippets:
 
-* **Wan 2.1 VACE Architecture & Nodes:** 1  
+* **Wan 2.2 Fun Control Architecture & Nodes:** 1  
 * **ComfyUI Masking & SAM2:** 7  
 * **CogVideoX-Fun Specifications:** 2  
 * **Pose Control & Preprocessing:** 8  
